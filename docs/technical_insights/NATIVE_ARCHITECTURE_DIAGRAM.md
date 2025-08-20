@@ -7,16 +7,17 @@
 The current codebase mixes **controller-side** and **agent-side** implementations in the same library (`native_tracer`), causing duplicate symbol conflicts and architectural confusion.
 
 #### Intended Architecture (from FRIDA_NATIVE_AGENT_MACOS_BACKEND.md)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Tracer Process (Controller)              │
+│                     Tracer Process (Controller)             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │   frida_controller.c (uses frida-core)              │    │
 │  │   - frida_controller_spawn()                        │    │
 │  │   - frida_controller_attach()                       │    │
 │  │   - frida_controller_inject_library()               │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                           ▼                                  │
+│                           ▼                                 │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │   Shared Memory (Two-Lane Buffer)                   │    │
 │  │   - Index Lane (always-on)                          │    │
@@ -28,7 +29,7 @@ The current codebase mixes **controller-side** and **agent-side** implementation
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Target Process (Agent)                    │
+│                    Target Process (Agent)                   │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │   frida_agent.c (uses frida-gum)                    │    │
 │  │   - gum_init_embedded()                             │    │
@@ -39,6 +40,7 @@ The current codebase mixes **controller-side** and **agent-side** implementation
 ```
 
 #### Current Implementation Problems
+
 ```
 native_tracer library includes:
 ├── frida_core.c          ✓ Controller bridge (correct)
@@ -51,6 +53,7 @@ native_tracer library includes:
 ### 2. **Duplicate Symbol Conflicts**
 
 Multiple files implement the same functions:
+
 - `frida_spawn()` - Defined in frida_core.c, frida_hooks.c, frida_hooks_tls.c, process_spawn.c
 - `frida_attach()` - Defined in multiple files
 - `frida_destroy()` - Defined in multiple files
@@ -59,6 +62,7 @@ Multiple files implement the same functions:
 ### 3. **Missing Core Functions**
 
 Key functions from the architecture are not implemented:
+
 - `frida_controller_inject_library()` - Critical for agent injection
 - `frida_session_inject_library_file_sync()` - Frida-core API for injection
 - Proper IPC between controller and agent
@@ -66,6 +70,7 @@ Key functions from the architecture are not implemented:
 ### 4. **Function Placement Issues**
 
 `frida_hook_function()` should be in the **agent** (using Gum Interceptor), not the controller:
+
 ```c
 // WRONG: In controller trying to hook remotely
 HookStats frida_hook_function(FridaContext* ctx, const char* function_name);
@@ -111,6 +116,7 @@ void agent_hook_function(const char* function_name) {
 ## Recommended Fixes
 
 ### 1. **Separate Libraries**
+
 ```cmake
 # Controller library (runs in tracer process)
 add_library(native_controller STATIC
@@ -128,6 +134,7 @@ add_library(frida_agent SHARED
 ```
 
 ### 2. **Implement Missing Functions**
+
 ```c
 // In frida_controller.c
 int frida_controller_inject_library(FridaContext* ctx, pid_t pid) {
@@ -143,7 +150,9 @@ int frida_controller_inject_library(FridaContext* ctx, pid_t pid) {
 ```
 
 ### 3. **Fix Function Placement**
+
 Move hook functions to agent:
+
 ```c
 // frida_agent.c (runs in target process)
 void agent_init(const gchar* data, gint data_size) {
@@ -155,7 +164,9 @@ void agent_init(const gchar* data, gint data_size) {
 ```
 
 ### 4. **Update Tests**
+
 Create proper inter-process tests:
+
 ```cpp
 TEST(AgentInjection, InjectAndCommunicate) {
     // 1. Spawn target process
@@ -168,6 +179,7 @@ TEST(AgentInjection, InjectAndCommunicate) {
 ## Summary
 
 The test failures reveal a fundamental architectural mismatch:
+
 - **Controller and agent code are mixed** in the same library
 - **Missing injection mechanism** - no actual agent injection
 - **Wrong abstraction level** - controller trying to hook directly instead of through agent

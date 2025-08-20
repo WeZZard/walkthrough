@@ -1,6 +1,6 @@
-# PROJECT GUIDANCE FOR CLAUDE
+# CLAUDE.md
 
-This file provides guidance to Claude Code when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## MANDATORY: Project Structure
 
@@ -154,11 +154,43 @@ All code in this repository must be covered by automated tests and measured with
 - C / C++ – Organize with CMake and use LLVM coverage tools (e.g., llvm-profdata, llvm-cov) to calculate line coverage.
 - Python – Use community standard tools (e.g., pytest, coverage.py) for reporting.
 
+### Build System Overview
+
+The project uses a polyglot build system orchestrated by Cargo as the primary driver:
+
+- **Rust Components**: Built directly with Cargo
+- **C/C++ Components**: Built via build.rs using cmake crate
+- **Python Components**: Built with maturin for Python bindings
+
 ### Mission & Operating Rules
 
 - **Single driver**: Cargo orchestrates everything. C/C++ is built as a leaf via build.rs (cmake crate). Python wheels are produced with maturin.
 - **Idempotent & reproducible**: Never write outside target/ or the chosen build dir. Prefer pinned tool versions where possible.
 - **Fail fast with context**: If a step fails, surface the exact command, tool versions, env vars, and last 50 lines of logs.
+
+### Common Build Commands
+
+```bash
+# Build all components (when project structure is populated)
+cargo build --release
+
+# Build specific component
+cd [component_name] && cargo build --release
+
+# Build Python wheels with maturin (when Python components exist)
+maturin build --release
+
+# Run tests for all components
+cargo test --all
+
+# Run tests with coverage (requires cargo-llvm-cov)
+cargo llvm-cov --all-features
+
+# Build C/C++ components separately (when CMakeLists.txt exists)
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+```
 
 ### Toolchain & Package Management Systems
 
@@ -211,6 +243,55 @@ Use .cargo/config.toml for non-default linkers/targets.
 - Python import fails: ensure maturin develop ran in correct venv.  
 - ABI mismatch: sync C headers with Rust extern signatures.  
 - Crash and unexpected behaviors: use LLDB or pdb to conduct an interactive debug.
+
+## High-Level Architecture
+
+The ADA system is a comprehensive tracing and analysis platform with the following core architecture:
+
+### Two-Lane Flight Recorder Architecture
+
+The tracer uses a dual-lane recording system inspired by aircraft black boxes:
+
+1. **Index Lane** (Always-On): Lightweight 24-byte events capturing function flow
+   - Timestamp, function ID, thread ID, event type
+   - Continuous recording with minimal overhead
+   - Provides complete execution timeline
+
+2. **Detail Lane** (Triggered): Heavy 512-byte events with full context
+   - Includes register values, stack snapshots
+   - Activated by triggers (crashes, specific functions, thresholds)
+   - Pre-roll and post-roll windows around trigger events
+
+### Component Architecture
+
+1. **Tracer** (Rust): Control plane responsible for:
+   - Shared memory management
+   - Event collection and ATF writing
+   - Leveraging tracer-backend to inject native agent into target
+
+2. **Tracer-Backend** (C/C++): Backend to inject native agent into target:
+   - Process spawning/attachment
+   - Agent injection via Frida
+   - Frida Gum hooks for function interception in the native agent
+   - Hot-path event logging to shared memory
+   - Minimal overhead instrumentation
+
+3. **Query Engine** (Python): Analysis and search interface:
+   - Token-budget-aware narratives
+   - Symbol resolution and DWARF parsing
+   - Structured filtering and search
+   - Flight recorder window analysis
+
+4. **MCP Server** (Python): Model Context Protocol interface:
+   - Exposes tracing capabilities to AI agents
+   - Manages trace sessions and queries
+
+### Key Design Principles
+
+- **Full Coverage by Default**: Hooks all resolvable functions without allowlists
+- **Performance First**: Sustain 5M+ events/sec with <10% overhead
+- **Crash Tolerant**: Best-effort flush on abnormal termination
+- **Platform Aware**: Handles macOS security restrictions gracefully
 
 ### Non-Goals
 
