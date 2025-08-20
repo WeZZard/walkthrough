@@ -1,0 +1,170 @@
+# Example CMakeLists.txt for using Frida SDK in tracer-backend component
+# This file demonstrates how to integrate Frida Core and Gum libraries
+
+cmake_minimum_required(VERSION 3.15)
+project(tracer_backend VERSION 0.1.0 LANGUAGES C CXX)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# Add the cmake modules path
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../utils/cmake")
+
+# Find Frida SDK
+find_package(Frida REQUIRED)
+
+if(NOT Frida_FOUND)
+    message(FATAL_ERROR "Frida SDK not found. Please run utils/init_third_parties.sh first.")
+endif()
+
+message(STATUS "Found Frida SDK")
+message(STATUS "  Frida Core: ${FRIDA_CORE_LIBRARY}")
+message(STATUS "  Frida Gum: ${FRIDA_GUM_LIBRARY}")
+message(STATUS "  Version: ${FRIDA_VERSION}")
+
+# ===========================================
+# Controller Library (runs in tracer process)
+# ===========================================
+add_library(native_controller STATIC
+    src/frida_controller.c
+    src/frida_core.c
+    src/process_spawn.c
+    src/shared_memory.c
+    src/ring_buffer.c
+)
+
+target_include_directories(native_controller PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Link with Frida Core for controller
+target_link_libraries(native_controller
+    PUBLIC
+        Frida::Core
+)
+
+target_compile_definitions(native_controller PRIVATE
+    CONTROLLER_SIDE=1
+)
+
+# ===========================================
+# Agent Library (injected into target process)
+# ===========================================
+add_library(frida_agent SHARED
+    src/frida_agent.c
+    src/frida_hooks.c
+    src/frida_hooks_tls.c
+    src/event_writer.c
+)
+
+target_include_directories(frida_agent PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Link with Frida Gum for agent
+target_link_libraries(frida_agent
+    PUBLIC
+        Frida::Gum
+)
+
+target_compile_definitions(frida_agent PRIVATE
+    AGENT_SIDE=1
+)
+
+# Set proper rpath for shared library
+if(APPLE)
+    set_target_properties(frida_agent PROPERTIES
+        INSTALL_RPATH "@loader_path/../lib"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+elseif(UNIX)
+    set_target_properties(frida_agent PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+# ===========================================
+# Test Executables
+# ===========================================
+if(BUILD_TESTING)
+    enable_testing()
+    
+    # Find Google Test
+    find_package(GTest REQUIRED)
+    
+    # Controller tests
+    add_executable(test_controller
+        tests/test_controller.cpp
+        tests/test_process_spawn.cpp
+        tests/test_shared_memory.cpp
+    )
+    
+    target_link_libraries(test_controller
+        PRIVATE
+            native_controller
+            GTest::GTest
+            GTest::Main
+    )
+    
+    # Agent tests (note: these run in-process for testing)
+    add_executable(test_agent
+        tests/test_hooks.cpp
+        tests/test_event_writer.cpp
+    )
+    
+    target_link_libraries(test_agent
+        PRIVATE
+            frida_agent
+            GTest::GTest
+            GTest::Main
+    )
+    
+    # Integration test
+    add_executable(test_integration
+        tests/test_integration.cpp
+    )
+    
+    target_link_libraries(test_integration
+        PRIVATE
+            native_controller
+            GTest::GTest
+            GTest::Main
+    )
+    
+    # Add tests to CTest
+    add_test(NAME controller_tests COMMAND test_controller)
+    add_test(NAME agent_tests COMMAND test_agent)
+    add_test(NAME integration_tests COMMAND test_integration)
+endif()
+
+# ===========================================
+# Installation
+# ===========================================
+install(TARGETS native_controller frida_agent
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY include/
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.h"
+)
+
+# ===========================================
+# Export for Rust integration
+# ===========================================
+# Generate a pkg-config file for Rust's build.rs to use
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tracer_backend.pc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/tracer_backend.pc"
+    @ONLY
+)
+
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/tracer_backend.pc"
+    DESTINATION lib/pkgconfig
+)

@@ -126,7 +126,6 @@ dmypy.json
 # Frida/Native Development
 # ===========================
 # Frida artifacts
-frida-core/
 *.frida
 
 # Shared memory files
@@ -273,9 +272,12 @@ compile_commands.json
 
 # Dependency directories (if using vendoring)
 /vendor/
-/third_party/
 
 # Lock files for CI/CD (optional - uncomment if needed)
 # Cargo.lock
 # poetry.lock
 # package-lock.json
+
+# Third party dependencies
+/third_parties/frida-core-devkit-*.tar.xz
+/third_parties/frida-gum-devkit-*.tar.xz

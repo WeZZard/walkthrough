@@ -111,6 +111,12 @@ project-root/
 │
 ├── tools/                          # Tools to complete or enhance the product workflow.
 │
+├── third_parties/                  # Third parties dependencies like Frida SDK.
+│   ├── frida-core/                 # Frida core SDK
+│   ├── frida-gum/                  # Frida gum SDK
+│   ├── frida-core-devkit-17.2.16-macos-arm64.tar.xz   # Downloaded Frida core SDK archive (git-ignored)
+│   └── frida-gum-devkit-17.2.16-macos-arm64.tar.xz    # Downloaded Frida gum SDK archive (git-ignored)
+│
 └── target/                         # Built products of the project (ignored in git)
 ```
 
@@ -171,6 +177,9 @@ The project uses a polyglot build system orchestrated by Cargo as the primary dr
 ### Common Build Commands
 
 ```bash
+# Initialize third-party dependencies (MUST run first)
+./utils/init_third_parties.sh
+
 # Build all components (when project structure is populated)
 cargo build --release
 
@@ -191,6 +200,28 @@ mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ```
+
+### Third-Party Dependencies
+
+The project uses Frida SDK for dynamic instrumentation. Dependencies are managed in `/third_parties/`:
+
+```bash
+# Initialize Frida SDKs (required before first build)
+./utils/init_third_parties.sh
+
+# Directory structure after initialization:
+third_parties/
+├── frida-core/          # Frida Core SDK (controller-side)
+├── frida-gum/           # Frida Gum SDK (agent-side)
+└── *.tar.xz            # Downloaded archives (git-ignored)
+```
+
+Key points:
+
+- Archives are git-ignored to keep repository size manageable
+- Platform-specific SDKs are downloaded automatically (macos-arm64, linux-x86_64, etc.)
+- CMake integration via `utils/cmake/FindFrida.cmake`
+- Rust integration via build.rs using cmake crate
 
 ### Toolchain & Package Management Systems
 
