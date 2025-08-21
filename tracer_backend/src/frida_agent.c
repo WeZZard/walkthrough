@@ -100,19 +100,21 @@ static void on_enter(GumInvocationContext* ic, gpointer user_data) {
         #ifdef __aarch64__
         // Capture ARM64 registers
         GumCpuContext* cpu = ic->cpu_context;
-        for (int i = 0; i < 8; i++) {
-            detail.x_regs[i] = cpu->x[i];
-        }
-        detail.lr = cpu->lr;
-        detail.fp = cpu->fp;
-        detail.sp = cpu->sp;
-        
-        // Capture stack snapshot (128 bytes from SP)
-        void* sp_ptr = (void*)cpu->sp;
-        size_t copy_size = 128;
-        if (sp_ptr) {
-            memcpy(detail.stack_snapshot, sp_ptr, copy_size);
-            detail.stack_size = copy_size;
+        if (cpu) {
+            for (int i = 0; i < 8; i++) {
+                detail.x_regs[i] = cpu->x[i];
+            }
+            detail.lr = cpu->lr;
+            detail.fp = cpu->fp;
+            detail.sp = cpu->sp;
+            
+            // Capture stack snapshot (128 bytes from SP)
+            void* sp_ptr = (void*)cpu->sp;
+            size_t copy_size = 128;
+            if (sp_ptr) {
+                memcpy(detail.stack_snapshot, sp_ptr, copy_size);
+                detail.stack_size = copy_size;
+            }
         }
         #endif
         
@@ -173,7 +175,16 @@ static void on_leave(GumInvocationContext* ic, gpointer user_data) {
     tls->in_handler = false;
 }
 
-// Entry point called when agent is injected
+// Forward declaration
+G_GNUC_INTERNAL void agent_init(const gchar* data, gint data_size);
+
+// Exported entry point for manual initialization
+__attribute__((visibility("default")))
+void frida_agent_main(void) {
+    agent_init(NULL, 0);
+}
+
+// Entry point called when agent is injected (Frida's standard)
 G_GNUC_INTERNAL void agent_init(const gchar* data, gint data_size) {
     gum_init_embedded();
     
@@ -196,11 +207,11 @@ G_GNUC_INTERNAL void agent_init(const gchar* data, gint data_size) {
     // Map control block
     g_agent_ctx->control_block = (ControlBlock*)g_agent_ctx->shm_control->address;
     
-    // Create ring buffers
-    g_agent_ctx->index_ring = ring_buffer_create(g_agent_ctx->shm_index->address,
+    // Attach to existing ring buffers (already initialized by controller)
+    g_agent_ctx->index_ring = ring_buffer_attach(g_agent_ctx->shm_index->address,
                                                  32 * 1024 * 1024,
                                                  sizeof(IndexEvent));
-    g_agent_ctx->detail_ring = ring_buffer_create(g_agent_ctx->shm_detail->address,
+    g_agent_ctx->detail_ring = ring_buffer_attach(g_agent_ctx->shm_detail->address,
                                                   32 * 1024 * 1024,
                                                   sizeof(DetailEvent));
     

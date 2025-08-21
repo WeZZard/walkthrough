@@ -1,9 +1,10 @@
 [workspace]
 members = [
-    "tracer-backend",
+    "tracer_backend",
+    "third_parties",
     # Future components will be added here:
     # "tracer",
-    # "query-engine",
+    # "query_engine",
     # "mcp_server",
 ]
 

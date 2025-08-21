@@ -226,6 +226,43 @@ target_link_libraries(test_ring_buffer
 
 add_test(NAME test_ring_buffer COMMAND test_ring_buffer)
 
+# Unit tests for ring buffer attach
+add_executable(test_ring_buffer_attach
+    tests/unit/test_ring_buffer_attach.c
+)
+
+target_include_directories(test_ring_buffer_attach
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_ring_buffer_attach
+    PRIVATE
+        tracer_utils
+        Threads::Threads
+)
+
+add_test(NAME test_ring_buffer_attach COMMAND test_ring_buffer_attach)
+
+# Unit tests for spawn method tracking
+add_executable(test_spawn_method
+    tests/unit/test_spawn_method.c
+)
+
+target_include_directories(test_spawn_method
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FRIDA_CORE_INCLUDE_DIR}
+)
+
+target_link_libraries(test_spawn_method
+    PRIVATE
+        tracer_controller
+        tracer_utils
+)
+
+add_test(NAME test_spawn_method COMMAND test_spawn_method)
+
 # Integration test
 add_executable(test_integration
     tests/integration/test_integration.c
@@ -244,6 +281,26 @@ target_link_libraries(test_integration
 )
 
 add_test(NAME test_integration COMMAND test_integration)
+
+# P0 fixes integration test
+add_executable(test_p0_fixes
+    tests/integration/test_p0_fixes.c
+)
+
+target_include_directories(test_p0_fixes
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FRIDA_CORE_INCLUDE_DIR}
+)
+
+target_link_libraries(test_p0_fixes
+    PRIVATE
+        tracer_controller
+        tracer_utils
+        ${CMAKE_DL_LIBS}
+)
+
+add_test(NAME test_p0_fixes COMMAND test_p0_fixes)
 
 # ===========================================
 # Installation

@@ -17,8 +17,11 @@ typedef struct {
     size_t buffer_size;
 } RingBuffer;
 
-// Create ring buffer
+// Create ring buffer (initializes header)
 RingBuffer* ring_buffer_create(void* memory, size_t size, size_t event_size);
+
+// Attach to existing ring buffer (does not initialize header)
+RingBuffer* ring_buffer_attach(void* memory, size_t size, size_t event_size);
 
 // Producer operations
 bool ring_buffer_write(RingBuffer* rb, const void* event);

@@ -128,6 +128,7 @@ Deprecated documents shall be renamed with a `[DEPRECATED]` prefix.
 
 **Rules for maintaining the project structure:**
 
+1. **Directories for all the components MUST named with snake_style convention.**
 1. **MUST place project-level docs in the /docs/ directory and component-level docs in the {component}/docs directory** - Use appropriate subdirectories
 2. **MUST place all the progress tracking documents in the /docs/progress_trackings directory** - Use appropriate subdirectories
 3. **NEVER commit compiled binaries** - Add to .gitignore  
@@ -135,9 +136,9 @@ Deprecated documents shall be renamed with a `[DEPRECATED]` prefix.
 ## MANDATORY: Components
 
 - tracer: The tracer, written in Rust.
-- tracer-backend: The backend of the traer, written in C/C++.
-- query-engine: The query engine, written in Python.
-- mcp_server: The MCP server of the entire system, written in Python.
+- tracer-backend(dir name: `tracer_backend`): The backend of the traer, written in C/C++.
+- query-engine(dir name: `query_engine`): The query engine, written in Python.
+- mcp-server(dir name: `mcp_server`): The MCP server of the entire system, written in Python.
 
 ## MANDATORY: Development Model
 
@@ -243,8 +244,53 @@ make -j$(nproc)
 
 ### IDE/Editor Integration
 
-- C/C++: compile_commands.json is generated automatically by the CMake build invoked from build.rs and is placed under target/ (or the configured build directory). In VSCode and VSCode-based IDEs, point the C/C++ extension's compileCommands setting to this file to enable IntelliSense, navigation, and diagnostics. Do not copy or symlink it to the repo root.
-- Multi-component workspaces can produce multiple compile_commands.json files; point your IDE to the one corresponding to the component you are editing.
+#### VSCode-based IDEs (Cursor, VSCode, etc.)
+
+**Preferred Approach**: Use VSCode's built-in debugging capabilities with `launch.json` configurations:
+
+- **Debugging**: Configure `launch.json` for integrated debugging experience
+- **Running**: Use Run/Debug configurations in the IDE
+- **IntelliSense**: Point C/C++ extension to `/target/compile_commands.json`
+
+Example `launch.json` configurations should be provided in `.vscode/launch.json` for:
+- Rust tests and binaries (using CodeLLDB or rust-analyzer)
+- C/C++ tests and examples (using CodeLLDB or gdb/lldb)
+- Python components (using Python debugger)
+
+**Key Points**:
+- compile_commands.json is generated automatically by the CMake build invoked from build.rs and is placed under target/ (or the configured build directory)
+- Multi-component workspaces can produce multiple compile_commands.json files; point your IDE to the one corresponding to the component you are editing
+- Do not copy or symlink compile_commands.json to the repo root
+
+#### CLI Integration
+
+**Preferred Approach**: Use Cargo commands directly:
+
+```bash
+# Build everything
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run specific test
+cargo test test_name
+
+# Run with verbose output
+cargo test -- --nocapture
+```
+
+For non-Rust binaries (C/C++ examples, tests), access them via predictable paths:
+```bash
+# Run Frida examples
+./target/release/frida_examples/frida_gum_example
+./target/release/frida_examples/frida_core_example <pid>
+
+# Run C/C++ tests
+./target/release/tracer_backend/test/test_ring_buffer
+```
+
+**Important**: Do NOT create wrapper shell scripts - use Cargo commands or direct binary execution
 
 All code in this repository must be covered by automated tests and measured with code coverage tools:
 

@@ -1,5 +1,5 @@
 [package]
-name = "tracer-backend"
+name = "tracer_backend"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

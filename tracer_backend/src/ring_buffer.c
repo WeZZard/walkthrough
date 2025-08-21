@@ -29,6 +29,29 @@ RingBuffer* ring_buffer_create(void* memory, size_t size, size_t event_size) {
     return rb;
 }
 
+RingBuffer* ring_buffer_attach(void* memory, size_t size, size_t event_size) {
+    if (!memory || size < sizeof(RingBufferHeader) + event_size) {
+        return NULL;
+    }
+    
+    RingBuffer* rb = calloc(1, sizeof(RingBuffer));
+    if (!rb) return NULL;
+    
+    rb->header = (RingBufferHeader*)memory;
+    rb->buffer = (uint8_t*)memory + sizeof(RingBufferHeader);
+    rb->event_size = event_size;
+    rb->buffer_size = size - sizeof(RingBufferHeader);
+    
+    // Do NOT initialize header - just attach to existing
+    // Verify magic number to ensure it's a valid ring buffer
+    if (rb->header->magic != RING_BUFFER_MAGIC) {
+        free(rb);
+        return NULL;
+    }
+    
+    return rb;
+}
+
 bool ring_buffer_write(RingBuffer* rb, const void* event) {
     if (!rb || !event) return false;
     

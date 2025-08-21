@@ -29,7 +29,18 @@ fn main() {
         println!("cargo:warning=compile_commands.json generated at: {}", compile_commands_path.display());
         
         // Also create a symlink in a predictable location for easier IDE configuration
-        let target_dir = PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()));
+        let target_dir = env::var("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                // Get the workspace root by going up from OUT_DIR
+                let out_path = Path::new(&out_dir);
+                // OUT_DIR is typically: target/{debug,release}/build/tracer_backend-{hash}/out
+                // We want: target/
+                out_path.ancestors()
+                    .find(|p| p.file_name() == Some(std::ffi::OsStr::new("target")))
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("target"))
+            });
         let link_path = target_dir.join("compile_commands.json");
         
         // Remove old symlink if it exists
@@ -83,21 +94,78 @@ fn main() {
         println!("cargo:rustc-link-lib=m");
     }
     
-    // Copy the agent library to output directory
-    let agent_lib = if cfg!(target_os = "macos") {
-        "libfrida_agent.dylib"
+    // Copy built artifacts to predictable locations in target/{profile}/tracer_backend/
+    let profile = env::var("PROFILE").unwrap();
+    let target_base = Path::new(&out_dir)
+        .ancestors()
+        .find(|p| p.file_name() == Some(std::ffi::OsStr::new("target")))
+        .unwrap_or_else(|| Path::new("target"));
+    
+    let predictable_dir = target_base.join(&profile).join("tracer_backend");
+    
+    // Create directories
+    std::fs::create_dir_all(predictable_dir.join("bin")).ok();
+    std::fs::create_dir_all(predictable_dir.join("lib")).ok();
+    std::fs::create_dir_all(predictable_dir.join("test")).ok();
+    
+    // Copy binaries
+    let binaries = vec![
+        ("bin/tracer_poc", "bin/tracer_poc"),
+        ("bin/test_cli", "test/test_cli"),
+        ("bin/test_runloop", "test/test_runloop"),
+        ("build/test_shared_memory", "test/test_shared_memory"),
+        ("build/test_ring_buffer", "test/test_ring_buffer"),
+        ("build/test_ring_buffer_attach", "test/test_ring_buffer_attach"),
+        ("build/test_spawn_method", "test/test_spawn_method"),
+        ("build/test_integration", "test/test_integration"),
+        ("build/test_p0_fixes", "test/test_p0_fixes"),
+    ];
+    
+    for (src_path, dst_path) in binaries {
+        let src = dst.join(src_path);
+        let dst_file = predictable_dir.join(dst_path);
+        if src.exists() {
+            if let Err(e) = std::fs::copy(&src, &dst_file) {
+                println!("cargo:warning=Failed to copy {}: {}", src_path, e);
+            } else {
+                println!("cargo:warning=Copied {} to {}", src_path, dst_file.display());
+            }
+        }
+    }
+    
+    // Copy libraries
+    let lib_ext = if cfg!(target_os = "macos") {
+        vec![("dylib", "dylib"), ("a", "a")]
     } else if cfg!(target_os = "windows") {
-        "frida_agent.dll"
+        vec![("dll", "dll"), ("lib", "lib")]
     } else {
-        "libfrida_agent.so"
+        vec![("so", "so"), ("a", "a")]
     };
     
-    let agent_src = dst.join("lib").join(agent_lib);
-    let agent_dst = out_dir.join("../../..").join(agent_lib);
-    
-    if agent_src.exists() {
-        std::fs::copy(&agent_src, &agent_dst).ok();
+    for (src_ext, _dst_ext) in lib_ext {
+        let pattern = format!("lib/*.{}", src_ext);
+        if let Ok(entries) = std::fs::read_dir(dst.join("lib")) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some(src_ext) {
+                    let filename = path.file_name().unwrap();
+                    let dst_file = predictable_dir.join("lib").join(filename);
+                    if let Err(e) = std::fs::copy(&path, &dst_file) {
+                        println!("cargo:warning=Failed to copy library: {}", e);
+                    } else {
+                        println!("cargo:warning=Copied {} to {}", path.display(), dst_file.display());
+                    }
+                }
+            }
+        }
     }
+    
+    // Report the predictable directory location
+    println!("cargo:warning=");
+    println!("cargo:warning=All binaries and libraries copied to: {}", predictable_dir.display());
+    println!("cargo:warning=  Binaries:  {}/bin/", predictable_dir.display());
+    println!("cargo:warning=  Tests:     {}/test/", predictable_dir.display());
+    println!("cargo:warning=  Libraries: {}/lib/", predictable_dir.display());
     
     // Generate bindings (optional - for better Rust integration)
     generate_bindings(&out_dir);
