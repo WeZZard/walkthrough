@@ -135,7 +135,7 @@ void test_no_double_resume() {
 int main() {
     printf("=== Spawn Method Tracking Tests ===\n\n");
     
-    test_posix_spawn_resume();
+    test_spawn_attach_resume();
     test_controller_state_tracking();
     test_no_double_resume();
     

@@ -13,7 +13,6 @@ This directory contains third-party SDK dependencies for the ADA project.
 ## Initialization
 
 To download and extract the Frida SDKs, run:
-
 ```bash
 ../utils/init_third_parties.sh
 ```
@@ -44,7 +43,6 @@ third_parties/
 ## Updating Frida Version
 
 To update to a new Frida version:
-
 1. Edit `FRIDA_VERSION` in `../utils/init_third_parties.sh`
 2. Delete the existing directories: `rm -rf frida-core frida-gum *.tar.xz`
 3. Run the initialization script again

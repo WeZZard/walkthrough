@@ -282,25 +282,25 @@ target_link_libraries(test_integration
 
 add_test(NAME test_integration COMMAND test_integration)
 
-# P0 fixes integration test
-add_executable(test_p0_fixes
-    tests/integration/test_p0_fixes.c
+# Controller full lifecycle integration test
+add_executable(test_controller_full_lifecycle
+    tests/integration/test_controller_full_lifecycle.c
 )
 
-target_include_directories(test_p0_fixes
+target_include_directories(test_controller_full_lifecycle
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FRIDA_CORE_INCLUDE_DIR}
 )
 
-target_link_libraries(test_p0_fixes
+target_link_libraries(test_controller_full_lifecycle
     PRIVATE
         tracer_controller
         tracer_utils
         ${CMAKE_DL_LIBS}
 )
 
-add_test(NAME test_p0_fixes COMMAND test_p0_fixes)
+add_test(NAME test_controller_full_lifecycle COMMAND test_controller_full_lifecycle)
 
 # ===========================================
 # Installation

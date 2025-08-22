@@ -1,4 +1,4 @@
-// Integration test for all P0 fixes
+// Integration test for controller full lifecycle with all critical components
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,9 +13,9 @@
 #include "ring_buffer.h"
 #include "tracer_types.h"
 
-// Test that verifies all P0 fixes work together
-void test_integrated_fixes() {
-    printf("Testing integrated P0 fixes...\n");
+// Test: controller__spawn_attach_resume__then_full_lifecycle_succeeds
+void controller__spawn_attach_resume__then_full_lifecycle_succeeds() {
+    printf("[CTRL] spawn_attach_resume → full lifecycle succeeds\n");
     
     // 1. Create controller with shared memory
     printf("  1. Creating controller and shared memory...\n");
@@ -127,8 +127,8 @@ cleanup:
     printf("  ✓ Integrated fixes test completed\n");
 }
 
-void test_native_agent_export() {
-    printf("Testing native agent export...\n");
+void agent__dlopen_symbols__then_exports_resolve() {
+    printf("[AGENT] dlopen_symbols → exports resolve\n");
     
     // Check that the agent library exports frida_agent_main
     void* handle = dlopen("/Users/wezzard/Projects/ADA/target/release/tracer_backend/lib/libfrida_agent.dylib", RTLD_LAZY);
@@ -147,18 +147,18 @@ void test_native_agent_export() {
 }
 
 int main() {
-    printf("=== P0 Fixes Integration Test ===\n\n");
+    printf("=== Controller Full Lifecycle Integration Test ===\n\n");
     
-    printf("This test verifies all P0 fixes:\n");
-    printf("  1. ring_buffer_attach() preserves data\n");
+    printf("This test verifies critical integration points:\n");
+    printf("  1. Ring buffer attach preserves existing data\n");
     printf("  2. Spawn method tracking prevents double resume\n");
-    printf("  3. Native agent structure in place\n");
-    printf("  4. Frida Gum API usage corrected\n\n");
+    printf("  3. Native agent exports are properly configured\n");
+    printf("  4. Full controller lifecycle executes correctly\n\n");
     
-    test_integrated_fixes();
-    test_native_agent_export();
+    controller__spawn_attach_resume__then_full_lifecycle_succeeds();
+    agent__dlopen_symbols__then_exports_resolve();
     
-    printf("\n✅ P0 fixes integration test completed!\n");
+    printf("\n✅ Controller full lifecycle test completed!\n");
     printf("\nNote: Some tests may require elevated permissions.\n");
     printf("Run with: sudo <test_binary>\n");
     

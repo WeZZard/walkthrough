@@ -118,7 +118,7 @@ fn main() {
         ("build/test_ring_buffer_attach", "test/test_ring_buffer_attach"),
         ("build/test_spawn_method", "test/test_spawn_method"),
         ("build/test_integration", "test/test_integration"),
-        ("build/test_p0_fixes", "test/test_p0_fixes"),
+        ("build/test_controller_full_lifecycle", "test/test_controller_full_lifecycle"),
     ];
     
     for (src_path, dst_path) in binaries {
