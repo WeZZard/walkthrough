@@ -404,7 +404,7 @@ int frida_controller_install_hooks(FridaController* controller) {
         }
     }
 
-    // 2) Predictable workspace-relative path
+    // 3) Search as if $PWD is the workspace root
     if (!found) {
         snprintf(agent_path, sizeof(agent_path),
                  "%s/target/%s/tracer_backend/lib/%s",
@@ -413,11 +413,11 @@ int frida_controller_install_hooks(FridaController* controller) {
         if (access(agent_path, F_OK) == 0) found = TRUE;
     }
 
-    // 3) Fallback to search with the test products pattern
+    // 3) Search as if $PWD is the test product directory
     if (!found) {
         snprintf(agent_path, sizeof(agent_path),
-                 "../lib/%s",
-                 lib_basename);
+                 "%s/../lib/%s",
+                 getenv("PWD") ? getenv("PWD") : ".", lib_basename);
         printf("[Controller] Trying agent path: %s\n", agent_path);
         if (access(agent_path, F_OK) == 0) found = TRUE;
     }

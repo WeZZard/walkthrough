@@ -118,6 +118,8 @@ TEST_F(AgentLoaderTest, agent_loader__missing_library__then_error_reported) {
     
     // Set environment to force bad path
     setenv("ADA_BUILD_TYPE", "nonexistent", 1);
+    const char* pwd = getenv("PWD");
+    setenv("PWD", "/", 1);
     
     FridaController* controller = frida_controller_create("/tmp/ada_test");
     ASSERT_NE(controller, nullptr);
@@ -159,6 +161,7 @@ TEST_F(AgentLoaderTest, agent_loader__missing_library__then_error_reported) {
     waitpid(pid, nullptr, 0);
     frida_controller_destroy(controller);
     unsetenv("ADA_BUILD_TYPE");
+    setenv("PWD", pwd, 1);
     
     printf("  ✓ Error handling test completed\n");
 }
