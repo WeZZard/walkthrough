@@ -63,13 +63,12 @@ TEST_F(SpawnMethodTest, controller__spawn_attach_resume__then_process_runs) {
     result = frida_controller_resume(controller);
     ASSERT_EQ(result, 0);
     
-    // Give it a moment to run
-    usleep(100000); // 100ms
-    
     // Check process state - should be running
     ProcessState state = frida_controller_get_state(controller);
-    // TODO: We don't inject native agent at the moment, so we can't assert this
-    // ASSERT_EQ(state, PROCESS_STATE_RUNNING);
+    ASSERT_EQ(state, PROCESS_STATE_RUNNING);
+    
+    // Give it a moment to run
+    usleep(100000); // 100ms
     
     // Clean up - kill the test process
     kill(pid, SIGTERM);

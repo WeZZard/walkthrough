@@ -54,12 +54,12 @@ TEST_F(ControllerFullLifecycleTest, controller__spawn_attach_resume__then_full_l
     // 2. Test spawn method tracking
     printf("  2. Testing spawn with method tracking...\n");
     char* argv[] = {(char*)"test_cli", (char*)"--brief", nullptr};
-    uint32_t pid;
+    uint32_t agent_pid;
     
     const char * path = ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/test/test_cli";
     int result = frida_controller_spawn_suspended(controller,
         path,
-        argv, &pid);
+        argv, &agent_pid);
 
     if (result != 0) {
         FILE * f = fopen(path, "r");
@@ -79,11 +79,12 @@ TEST_F(ControllerFullLifecycleTest, controller__spawn_attach_resume__then_full_l
         return;
     }
     
-    printf("  Spawned PID: %u\n", pid);
+    printf("  Spawned PID: %u\n", agent_pid);
     
     // 3. Attach to process
     printf("  3. Attaching to process...\n");
-    result = frida_controller_attach(controller, pid);
+    result = frida_controller_attach(controller, agent_pid);
+    ASSERT_EQ(frida_controller_get_state(controller), PROCESS_STATE_ATTACHED);
     ASSERT_EQ(result, 0);
     
     // 4. Test ring buffer attach (simulating agent attach)
@@ -132,22 +133,22 @@ TEST_F(ControllerFullLifecycleTest, controller__spawn_attach_resume__then_full_l
     result = frida_controller_resume(controller);
     ASSERT_EQ(result, 0);
     
-    // Let it run briefly
-    usleep(100000); // 100ms
-    
     // 7. Check final state
     ProcessState state = frida_controller_get_state(controller);
-    // TODO: We don't inject native agent at the moment, so we can't assert this
-    // ASSERT_EQ(state, PROCESS_STATE_RUNNING);
+    // The process may exit too fast to get the running state, so we check for both.
+    ASSERT_TRUE(state == PROCESS_STATE_RUNNING || state == PROCESS_STATE_INITIALIZED);
     printf("  Process state: RUNNING\n");
+    
+    // Let it run briefly
+    usleep(100000); // 100ms
     
     // 8. Get stats
     TracerStats stats = frida_controller_get_stats(controller);
     printf("  Stats - Total events captured: %llu\n", stats.events_captured);
     
     // Clean up process
-    kill((pid_t) pid, SIGTERM);
-    waitpid((pid_t) pid, nullptr, 0);
+    kill((pid_t) agent_pid, SIGTERM);
+    waitpid((pid_t) agent_pid, nullptr, 0);
     
     ring_buffer_destroy(controller_rb);
     ring_buffer_destroy(agent_rb);

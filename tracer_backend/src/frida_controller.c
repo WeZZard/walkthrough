@@ -628,14 +628,13 @@ int frida_controller_resume(FridaController* controller) {
         } else {
             controller->state = PROCESS_STATE_RUNNING;
             controller->control_block->process_state = PROCESS_STATE_RUNNING;
+            return 0;
         }
     } else {
         controller->state = PROCESS_STATE_FAILED;
         controller->control_block->process_state = PROCESS_STATE_FAILED;
         return -1;
     }
-    
-    return 0;
 }
 
 int frida_controller_detach(FridaController* controller) {
