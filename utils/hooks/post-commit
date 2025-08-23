@@ -1,0 +1,149 @@
+#!/bin/bash
+# Post-commit hook for generating comprehensive coverage reports
+# Runs in background to avoid blocking the commit workflow
+
+set -euo pipefail
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+UTILS_DIR="${REPO_ROOT}/utils"
+COVERAGE_DIR="${REPO_ROOT}/target/coverage"
+REPORTS_DIR="${COVERAGE_DIR}/reports"
+
+echo -e "${BLUE}[POST-COMMIT]${NC} Generating coverage reports in background..."
+
+# Function to generate reports
+generate_reports() {
+    # Create timestamp for this report
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    COMMIT_SHA=$(git rev-parse --short HEAD)
+    REPORT_NAME="coverage_${COMMIT_SHA}_${TIMESTAMP}"
+    
+    # Make script executable
+    chmod +x "${UTILS_DIR}/metrics/integration_quality.sh"
+    
+    # Run full coverage analysis
+    "${UTILS_DIR}/metrics/integration_quality.sh" full > "${COVERAGE_DIR}/${REPORT_NAME}.log" 2>&1
+    
+    # Create coverage trend file if it doesn't exist
+    TREND_FILE="${COVERAGE_DIR}/coverage_trend.csv"
+    if [[ ! -f "$TREND_FILE" ]]; then
+        echo "timestamp,commit,rust_coverage,cpp_coverage,python_query_coverage,python_mcp_coverage,integration_score" > "$TREND_FILE"
+    fi
+    
+    # Extract coverage percentages
+    RUST_COV=$(cat "${COVERAGE_DIR}/rust/coverage.txt" 2>/dev/null || echo "0")
+    CPP_COV=$(cat "${COVERAGE_DIR}/cpp/coverage.txt" 2>/dev/null || echo "0")
+    PY_QUERY_COV=$(cat "${COVERAGE_DIR}/python/query_engine_coverage.txt" 2>/dev/null || echo "0")
+    PY_MCP_COV=$(cat "${COVERAGE_DIR}/python/mcp_server_coverage.txt" 2>/dev/null || echo "0")
+    
+    # Extract integration score from log
+    INTEGRATION_SCORE=$(grep "INTEGRATION SCORE:" "${COVERAGE_DIR}/${REPORT_NAME}.log" | grep -oE '[0-9]+/100' | cut -d'/' -f1 || echo "0")
+    
+    # Append to trend file
+    echo "${TIMESTAMP},${COMMIT_SHA},${RUST_COV},${CPP_COV},${PY_QUERY_COV},${PY_MCP_COV},${INTEGRATION_SCORE}" >> "$TREND_FILE"
+    
+    # Generate trend analysis
+    generate_trend_analysis
+    
+    # Open HTML report if in interactive mode and on macOS
+    if [[ -t 1 ]] && [[ "$(uname)" == "Darwin" ]]; then
+        if [[ -f "${REPORTS_DIR}/rust/index.html" ]]; then
+            echo -e "${BLUE}[POST-COMMIT]${NC} Opening coverage report in browser..."
+            open "${REPORTS_DIR}/rust/index.html" 2>/dev/null || true
+        fi
+    fi
+    
+    echo -e "${GREEN}[POST-COMMIT]${NC} Coverage report generated: ${REPORTS_DIR}/summary.txt"
+    echo -e "${GREEN}[POST-COMMIT]${NC} Coverage trend updated: ${TREND_FILE}"
+}
+
+# Function to generate trend analysis
+generate_trend_analysis() {
+    local TREND_REPORT="${REPORTS_DIR}/trend_analysis.txt"
+    
+    cat > "$TREND_REPORT" << EOF
+=================================================================
+           COVERAGE TREND ANALYSIS
+=================================================================
+Generated: $(date)
+Latest Commit: $(git rev-parse --short HEAD)
+Commit Message: $(git log -1 --pretty=%B | head -1)
+
+COVERAGE HISTORY (Last 5 commits):
+-----------------------------------
+EOF
+    
+    # Show last 5 entries from trend file
+    if [[ -f "${COVERAGE_DIR}/coverage_trend.csv" ]]; then
+        echo "" >> "$TREND_REPORT"
+        tail -5 "${COVERAGE_DIR}/coverage_trend.csv" | column -t -s',' >> "$TREND_REPORT"
+    fi
+    
+    # Calculate coverage delta
+    if [[ -f "${COVERAGE_DIR}/coverage_trend.csv" ]] && [[ $(wc -l < "${COVERAGE_DIR}/coverage_trend.csv") -gt 2 ]]; then
+        PREV_LINE=$(tail -2 "${COVERAGE_DIR}/coverage_trend.csv" | head -1)
+        CURR_LINE=$(tail -1 "${COVERAGE_DIR}/coverage_trend.csv")
+        
+        PREV_RUST=$(echo "$PREV_LINE" | cut -d',' -f3)
+        CURR_RUST=$(echo "$CURR_LINE" | cut -d',' -f3)
+        
+        cat >> "$TREND_REPORT" << EOF
+
+COVERAGE DELTA:
+---------------
+EOF
+        
+        # Calculate and show delta
+        if command -v bc &>/dev/null; then
+            RUST_DELTA=$(echo "$CURR_RUST - $PREV_RUST" | bc 2>/dev/null || echo "0")
+            
+            if (( $(echo "$RUST_DELTA > 0" | bc -l) )); then
+                echo "Rust Coverage: ↑ +${RUST_DELTA}% (improved)" >> "$TREND_REPORT"
+            elif (( $(echo "$RUST_DELTA < 0" | bc -l) )); then
+                echo "Rust Coverage: ↓ ${RUST_DELTA}% (decreased)" >> "$TREND_REPORT"
+            else
+                echo "Rust Coverage: → 0% (unchanged)" >> "$TREND_REPORT"
+            fi
+        fi
+    fi
+    
+    cat >> "$TREND_REPORT" << EOF
+
+RECOMMENDATIONS:
+----------------
+EOF
+    
+    # Provide recommendations based on coverage
+    if [[ -f "${COVERAGE_DIR}/rust/coverage.txt" ]]; then
+        RUST_COV=$(cat "${COVERAGE_DIR}/rust/coverage.txt")
+        if (( $(echo "$RUST_COV < 30" | bc -l 2>/dev/null || echo 1) )); then
+            echo "⚠ Rust coverage is below 30%. Consider adding more unit tests." >> "$TREND_REPORT"
+        elif (( $(echo "$RUST_COV < 60" | bc -l 2>/dev/null || echo 0) )); then
+            echo "→ Rust coverage is moderate. Target 80% for production readiness." >> "$TREND_REPORT"
+        else
+            echo "✓ Rust coverage is good. Maintain or improve current levels." >> "$TREND_REPORT"
+        fi
+    fi
+    
+    echo "" >> "$TREND_REPORT"
+    echo "Full reports available at: ${REPORTS_DIR}" >> "$TREND_REPORT"
+    echo "==================================================================" >> "$TREND_REPORT"
+}
+
+# Run report generation in background
+{
+    generate_reports
+} &
+
+# Store background job PID
+BG_PID=$!
+echo -e "${BLUE}[POST-COMMIT]${NC} Coverage report generation started (PID: $BG_PID)"
+echo -e "${BLUE}[POST-COMMIT]${NC} Reports will be available at: ${REPORTS_DIR}"
+
+# Don't wait for background job - let commit complete immediately
+exit 0

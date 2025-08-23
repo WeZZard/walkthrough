@@ -45,7 +45,7 @@ Example workflow (unified script recommended):
 
 ```bash
 # Check coverage for changes only (multi-language aware)
-./scripts/metrics/integration_quality.sh --incremental
+./utils/metrics/integration_quality.sh --incremental
 ```
 
 This ensures:
@@ -68,7 +68,7 @@ This ensures:
 
 ```bash
 # Install mandatory hooks
-./scripts/install_hooks.sh
+./utils/install_hooks.sh
 ```
 
 2) CI (e.g., GitHub Actions): Enforces quality on PRs and pushes
@@ -79,7 +79,7 @@ This ensures:
 
 ## Quality Metrics Framework
 
-A unified integration quality script (scripts/metrics/integration_quality.sh) should evaluate:
+A unified integration quality script (utils/metrics/integration_quality.sh) should evaluate:
 
 - Build Success Rate: Must be 100% (Rust + C/C++ + Python + Examples)
 - Test Success Rate: Must be 100% (unit + integration + examples)
@@ -117,16 +117,16 @@ Before committing (choose one):
 
 ```bash
 # Quick critical checks only (builds/tests/stubs)
-./scripts/metrics/integration_quality.sh --score-only
+./utils/metrics/integration_quality.sh --score-only
 
 # Incremental coverage for changes (recommended)
-./scripts/metrics/integration_quality.sh --incremental
+./utils/metrics/integration_quality.sh --incremental
 
 # Full multi-language quality report with details
-./scripts/metrics/integration_quality.sh --full
+./utils/metrics/integration_quality.sh --full
 
 # Install mandatory hooks
-./scripts/install_hooks.sh
+./utils/install_hooks.sh
 ```
 
 If you don’t use a unified script yet, run per-language commands:

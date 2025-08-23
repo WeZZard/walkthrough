@@ -222,7 +222,7 @@ TEST_F(IntegrationTest, controller__statistics_collection__then_counters_increme
 
 // Main test runner that checks for test_cli availability
 TEST_F(IntegrationTest, PrerequisiteCheck) {
-    if (access("./test_cli", X_OK) != 0) {
+    if (access(ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/test/test_cli", X_OK) != 0) {
         printf("Warning: test_cli not found or not executable\n");
         printf("Build test_cli first with: cargo build\n");
         GTEST_SKIP() << "test_cli not available, skipping tests that require it";

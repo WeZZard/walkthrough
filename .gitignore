@@ -62,6 +62,7 @@ Cargo.lock
 *.gcov
 *.profraw
 *.profdata
+build-coverage
 
 # ===========================
 # Python
