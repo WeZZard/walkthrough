@@ -133,6 +133,21 @@ Deprecated documents shall be renamed with a `[DEPRECATED]` prefix.
 2. **MUST place all the progress tracking documents in the /docs/progress_trackings directory** - Use appropriate subdirectories
 3. **NEVER commit compiled binaries** - Add to .gitignore  
 
+### Documentation conventions
+
+- README (repo root): High-level overview and links only (what/why, components, repo layout). Do not put setup commands here. It MUST link to `docs/GETTING_STARTED.md` when present.
+
+- `docs/GETTING_STARTED.md`: Canonical onboarding for both humans and AI agents. It should include:
+  - Preflight checklist with exact versions (OS, toolchain, SDKs)
+  - One-true setup (init third parties, build, test)
+  - Run flows (spawn/attach on fixtures), expected outputs, summarize
+  - Troubleshooting pointers and deterministic smoke tests
+  - Machine interface notes (stable CLI flags, exit codes, optional `--json` example)
+
+- No duplication: README points to GETTING_STARTED; deep contracts live under `docs/specs/`; milestone/epic/iteration artifacts live under `docs/progress_trackings/`.
+
+- If GETTING_STARTED is absent, prefer `docs/specs/*` and `docs/progress_trackings/*` as sources of truth. Do NOT create placeholder files.
+
 ## MANDATORY: Components
 
 - tracer: The tracer, written in Rust.
@@ -464,4 +479,3 @@ All tests must be self-descriptive by name alone. Use a behavioral, scenario-bas
   - Do not rely on prior execution context; each name must stand on its own.
   - One behavior per test; split cases rather than overloading a single test.
   - Keep names lowercase with underscores for readability; separate sections with double underscores `__`.
-
