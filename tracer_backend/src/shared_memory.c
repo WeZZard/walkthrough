@@ -157,7 +157,7 @@ static SharedMemoryRef shared_memory_open(const char* name, size_t size) {
     // Open existing shared memory
     shm->fd = shm_open(shm->name, O_RDWR, 0666);
     if (shm->fd == -1) {
-        fprintf(stderr, "Failed to open shared memory object: %s\n", strerror(errno));
+        fprintf(stderr, "Failed to open shared memory object (%s): %s\n", shm->name, strerror(errno));
         free(shm);
         return NULL;
     }

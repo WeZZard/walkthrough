@@ -14,7 +14,7 @@ Load the native agent (.dylib) into the target via Frida QuickJS and invoke agen
 
 ## Interfaces
 - `frida_controller_install_hooks(controller)` will: create and load loader script; return non-zero on error.
-- Controller provides `pid` and `session_id` to the loader (spawn: env via Frida, attach: inline args).
+- Controller provides `pid` (the controller's pid) and `session_id` to the loader (spawn: env via Frida, attach: inline args).
 
 ## Risks
 - Agent path resolution; OS-level permission errors; loader runtime mismatch.

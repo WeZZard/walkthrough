@@ -302,6 +302,25 @@ target_link_libraries(test_controller_full_lifecycle
 
 add_test(NAME test_controller_full_lifecycle COMMAND test_controller_full_lifecycle)
 
+# Agent loader integration test (M1_E1_I1)
+add_executable(test_agent_loader
+    tests/integration/test_agent_loader.c
+)
+
+target_include_directories(test_agent_loader
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${FRIDA_CORE_INCLUDE_DIR}
+)
+
+target_link_libraries(test_agent_loader
+    PRIVATE
+        tracer_controller
+        tracer_utils
+)
+
+add_test(NAME test_agent_loader COMMAND test_agent_loader)
+
 # ===========================================
 # Installation
 # ===========================================

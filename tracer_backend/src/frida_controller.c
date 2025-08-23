@@ -169,14 +169,19 @@ FridaController* frida_controller_create(const char* output_dir) {
     build_shm_name(name_index, sizeof(name_index), ADA_ROLE_INDEX, 0);
     build_shm_name(name_detail, sizeof(name_detail), ADA_ROLE_DETAIL, 0);
 
+    // Create shared memory with the controller's PID so agent can find it
+    // Use the shared_memory API to get controller's PID
+    uint32_t controller_pid = shared_memory_get_pid();
+    uint32_t session_id = shared_memory_get_session_id();
+    
     controller->shm_control = shared_memory_create_unique(ADA_ROLE_CONTROL,
-                                                         0, shared_memory_get_session_id(),
+                                                         controller_pid, session_id,
                                                          CONTROL_BLOCK_SIZE, NULL, 0);
     controller->shm_index = shared_memory_create_unique(ADA_ROLE_INDEX,
-                                                       0, shared_memory_get_session_id(),
+                                                       controller_pid, session_id,
                                                        INDEX_LANE_SIZE, NULL, 0);
     controller->shm_detail = shared_memory_create_unique(ADA_ROLE_DETAIL,
-                                                        0, shared_memory_get_session_id(),
+                                                        controller_pid, session_id,
                                                         DETAIL_LANE_SIZE, NULL, 0);
     
     if (!controller->shm_control || !controller->shm_index || !controller->shm_detail) {
@@ -339,7 +344,7 @@ int frida_controller_attach(FridaController* controller, uint32_t pid) {
     
     GError* error = NULL;
     FridaSessionOptions* options = frida_session_options_new();
-    
+
     controller->session = frida_device_attach_sync(controller->device, pid, 
                                                    options, NULL, &error);
     
@@ -367,18 +372,93 @@ int frida_controller_attach(FridaController* controller, uint32_t pid) {
 int frida_controller_install_hooks(FridaController* controller) {
     if (!controller || !controller->session) return -1;
     
-    // For now, create a minimal loader script that loads our native agent
-    // The actual hooking is done by the native agent
-    const char* script_source = 
+    // Compute absolute path to the agent library
+    char agent_path[1024];
+    const char* build_type = getenv("ADA_BUILD_TYPE");
+    if (!build_type) build_type = "debug";  // default to debug
+    
+    // Try predictable path first
+    snprintf(agent_path, sizeof(agent_path),
+             "%s/target/%s/tracer_backend/lib/libfrida_agent.dylib",
+             getenv("PWD") ? getenv("PWD") : ".", build_type);
+    
+    // Check if file exists
+    if (access(agent_path, F_OK) != 0) {
+        // Try alternative path
+        snprintf(agent_path, sizeof(agent_path),
+                 "/Users/wezzard/Projects/ADA/target/%s/tracer_backend/lib/libfrida_agent.dylib",
+                 build_type);
+        
+        if (access(agent_path, F_OK) != 0) {
+            fprintf(stderr, "[Controller] Agent library not found at %s\n", agent_path);
+            return -1;
+        }
+    }
+    
+    printf("[Controller] Using agent library: %s\n", agent_path);
+    
+    // Prepare initialization payload for the agent
+    // Pass the CONTROLLER's PID (not the target's PID) so agent can connect to controller's shared memory
+    // Use the shared_memory API to get consistent PID and session ID
+    char init_payload[256];
+    snprintf(init_payload, sizeof(init_payload),
+             "host_pid=%u;session_id=%08x",
+             shared_memory_get_pid(), shared_memory_get_session_id());
+    
+    // Create QuickJS loader script
+    char script_source[4096];
+    snprintf(script_source, sizeof(script_source),
         "console.log('[Loader] Starting native agent injection');\n"
-        "// Native agent will handle all hooking\n"
-        "console.log('[Loader] Native agent loaded');\n";
+        "console.log('[Loader] Agent path: %s');\n"
+        "console.log('[Loader] Init payload: %s');\n"
+        "\n"
+        "try {\n"
+        "  const agent_path = '%s';\n"
+        "  const init_payload = '%s';\n"
+        "  \n"
+        "  // Load the native agent module\n"
+        "  const mod = Module.load(agent_path);\n"
+        "  console.log('[Loader] Agent loaded at base:', mod.base);\n"
+        "  \n"
+        "  // Get the agent_init function\n"
+        "  const agent_init = mod.getExportByName('agent_init');\n"
+        "  if (agent_init) {\n"
+        "    console.log('[Loader] Found agent_init at:', agent_init);\n"
+        "    \n"
+        "    // Create native function wrapper\n"
+        "    // agent_init(const gchar* data, gint data_size)\n"
+        "    const initFunc = new NativeFunction(agent_init, 'void', ['pointer', 'int']);\n"
+        "    \n"
+        "    // Allocate and write the payload\n"
+        "    const payloadBuf = Memory.allocUtf8String(init_payload);\n"
+        "    \n"
+        "    // Call agent_init\n"
+        "    try {\n"
+        "      initFunc(payloadBuf, init_payload.length);\n"
+        "      console.log('[Loader] Agent initialized successfully');\n"
+        "    } catch (e2) {\n"
+        "      console.error('[Loader] Error calling agent_init:', e2.toString());\n"
+        "    }\n"
+        "  } else {\n"
+        "    console.error('[Loader] agent_init not found in agent');\n"
+        "  }\n"
+        "  \n"
+        "  // Export a ping function for health checks\n"
+        "  rpc.exports = {\n"
+        "    ping: function() { return 'ok'; }\n"
+        "  };\n"
+        "} catch (e) {\n"
+        "  console.error('[Loader] Error:', e.toString());\n"
+        "  throw e;\n"
+        "}\n",
+        agent_path, init_payload, agent_path, init_payload);
     
     GError* error = NULL;
     FridaScriptOptions* options = frida_script_options_new();
-    frida_script_options_set_name(options, "tracer");
+    frida_script_options_set_name(options, "agent-loader");
     frida_script_options_set_runtime(options, FRIDA_SCRIPT_RUNTIME_QJS);
     
+    // May get timeout error when debugger is attached.
     controller->script = frida_session_create_script_sync(controller->session,
                                                           script_source,
                                                           options, NULL, &error);

@@ -228,7 +228,8 @@ static void on_leave(GumInvocationContext* ic, gpointer user_data) {
 }
 
 // Forward declaration
-G_GNUC_INTERNAL void agent_init(const gchar* data, gint data_size);
+__attribute__((visibility("default")))
+void agent_init(const gchar* data, gint data_size);
 
 static uint32_t g_host_pid = UINT32_MAX;
 static uint32_t g_session_id = UINT32_MAX;
@@ -293,50 +294,69 @@ AgentContext* get_shared_agent_context() {
 }
 
 // Entry point called when agent is injected (Frida's standard)
-G_GNUC_INTERNAL void agent_init(const gchar* data, gint data_size) {
+// Must be exported for Frida to find it
+__attribute__((visibility("default")))
+void agent_init(const gchar* data, gint data_size) {
+    // Initialize GUM first before using any GLib functions
+    gum_init_embedded();
+    
+    g_print("[Agent] agent_init called with data_size=%d\n", data_size);
+    
     uint32_t arg_host = 0, arg_sid = 0;
     parse_init_payload(data, data_size, &arg_host, &arg_sid);
     g_host_pid = arg_host;
     g_session_id = arg_sid;
+    
+    g_print("[Agent] Parsed host_pid=%u, session_id=%08x\n", g_host_pid, g_session_id);
 
     AgentContext* ctx = get_shared_agent_context();
 
     if (ctx == NULL) {
-        g_debug("Failed to allocate agent context\n");
+        g_print("[Agent] Failed to allocate agent context\n");
         return;
     }
-
-    gum_init_embedded();
+    
+    g_print("[Agent] Got context, host_pid=%u, session_id=%08x\n", ctx->host_pid, ctx->session_id);
     
     // Create TLS key
     pthread_key_create(&g_tls_key, free);
     
     // Open shared memory segments using unique naming
+    g_print("[Agent] Opening shared memory segments...\n");
     ctx->shm_control = shared_memory_open_unique(ADA_ROLE_CONTROL, ctx->host_pid, ctx->session_id, 4096);
     ctx->shm_index = shared_memory_open_unique(ADA_ROLE_INDEX, ctx->host_pid, ctx->session_id, 32 * 1024 * 1024);
     ctx->shm_detail = shared_memory_open_unique(ADA_ROLE_DETAIL, ctx->host_pid, ctx->session_id, 32 * 1024 * 1024);
     
     if (!ctx->shm_control || !ctx->shm_index || !ctx->shm_detail) {
-        g_debug("Failed to open shared memory\n");
+        g_print("[Agent] Failed to open shared memory (control=%p, index=%p, detail=%p)\n",
+                ctx->shm_control, ctx->shm_index, ctx->shm_detail);
         return;
     }
     
+    g_print("[Agent] Successfully opened all shared memory segments\n");
+    
     // Map control block
     ctx->control_block = (ControlBlock*)shared_memory_get_address(ctx->shm_control);
+    g_print("[Agent] Control block mapped at %p\n", ctx->control_block);
     
     // Attach to existing ring buffers (already initialized by controller)
-    ctx->index_ring = ring_buffer_attach(shared_memory_get_address(ctx->shm_index),
-                                                 32 * 1024 * 1024,
-                                                 sizeof(IndexEvent));
-    ctx->detail_ring = ring_buffer_attach(shared_memory_get_address(ctx->shm_detail),
-                                                  32 * 1024 * 1024,
-                                                  sizeof(DetailEvent));
+    void* index_addr = shared_memory_get_address(ctx->shm_index);
+    void* detail_addr = shared_memory_get_address(ctx->shm_detail);
+    g_print("[Agent] Ring buffer addresses: index=%p, detail=%p\n", index_addr, detail_addr);
+    
+    ctx->index_ring = ring_buffer_attach(index_addr, 32 * 1024 * 1024, sizeof(IndexEvent));
+    g_print("[Agent] Index ring attached: %p\n", ctx->index_ring);
+    
+    ctx->detail_ring = ring_buffer_attach(detail_addr, 32 * 1024 * 1024, sizeof(DetailEvent));
+    g_print("[Agent] Detail ring attached: %p\n", ctx->detail_ring);
     
     // Get interceptor
     ctx->interceptor = gum_interceptor_obtain();
+    g_print("[Agent] Got interceptor: %p\n", ctx->interceptor);
     
     // Begin transaction for batch hooking
     gum_interceptor_begin_transaction(ctx->interceptor);
+    g_print("[Agent] Beginning hook installation...\n");
     
     // Hook some specific functions for POC
     // Note: Full enumeration would require different API approach
@@ -373,6 +393,7 @@ G_GNUC_INTERNAL void agent_init(const gchar* data, gint data_size) {
     gum_interceptor_end_transaction(ctx->interceptor);
     
     g_print("[Agent] Installed %u hooks\n", ctx->num_hooks);
+    g_print("[Agent] Initialization complete\n");
 }
 
 // Called when agent is being unloaded

@@ -119,6 +119,7 @@ fn main() {
         ("build/test_spawn_method", "test/test_spawn_method"),
         ("build/test_integration", "test/test_integration"),
         ("build/test_controller_full_lifecycle", "test/test_controller_full_lifecycle"),
+        ("build/test_agent_loader", "test/test_agent_loader"),
     ];
     
     for (src_path, dst_path) in binaries {
