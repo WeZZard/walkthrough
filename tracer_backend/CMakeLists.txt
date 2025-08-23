@@ -228,7 +228,7 @@ if(BUILD_TESTING)
         set(ADA_WORKSPACE_ROOT "${CMAKE_SOURCE_DIR}/..")
     endif()
     if(NOT DEFINED ADA_BUILD_PROFILE)
-        set(ADA_BUILD_PROFILE "$<CONFIG>")
+        set(ADA_BUILD_PROFILE $<CONFIG>)
     endif()
 
     # Generate a header with compile-time defaults
@@ -389,13 +389,13 @@ if(BUILD_TESTING)
     
     # Add a custom target to run all GTests with nice output
     add_custom_target(run_gtests
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_ring_buffer --gtest_color=yes
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_ring_buffer_attach --gtest_color=yes
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_shared_memory --gtest_color=yes
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_spawn_method --gtest_color=yes
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_controller_full_lifecycle --gtest_color=yes
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_integration --gtest_color=yes
-        COMMAND env ADA_BUILD_PROFILE=$<CONFIG> ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_agent_loader --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_ring_buffer --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_ring_buffer_attach --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_shared_memory --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_spawn_method --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_controller_full_lifecycle --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_integration --gtest_color=yes
+        COMMAND env ADA_BUILD_PROFILE=${ADA_BUILD_PROFILE} ADA_WORKSPACE_ROOT=${ADA_WORKSPACE_ROOT} test_agent_loader --gtest_color=yes
         DEPENDS test_ring_buffer test_ring_buffer_attach test_shared_memory test_spawn_method test_controller_full_lifecycle test_integration test_agent_loader
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     )

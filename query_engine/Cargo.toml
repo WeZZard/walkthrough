@@ -1,0 +1,31 @@
+[package]
+name = "query_engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["ADA Team"]
+description = "Query engine for ADA tracing system - Python bindings"
+license = "MIT"
+
+[lib]
+name = "query_engine"
+# "rlib" for Rust dependencies only - maturin will handle Python extension
+crate-type = ["rlib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["abi3-py39"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+
+[features]
+default = []
+python = ["pyo3", "pyo3/extension-module"]
+coverage = []  # Enable coverage instrumentation
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

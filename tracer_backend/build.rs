@@ -26,15 +26,29 @@ fn main() {
     println!("cargo:rustc-env=ADA_WORKSPACE_ROOT={}", workspace_root.display());
     println!("cargo:rustc-env=ADA_BUILD_PROFILE={}", profile);
 
+    // Check if coverage is enabled
+    let coverage_enabled = env::var("CARGO_FEATURE_COVERAGE").is_ok();
+    
     // Build the C/C++ components using cmake
-    let dst = cmake::Config::new(".")
+    let mut cmake_config = cmake::Config::new(".");
+    cmake_config
         .define("CMAKE_BUILD_TYPE", build_type)
         .define("CMAKE_EXPORT_COMPILE_COMMANDS", "ON") // Generate compile_commands.json
         .define("BUILD_TESTING", "ON") // Build tests including Google Test
         .define("CMAKE_CXX_STANDARD", "17") // Ensure C++17 for Google Test
         .define("ADA_WORKSPACE_ROOT", workspace_root.display().to_string())
-        .define("ADA_BUILD_PROFILE", &profile)
-        .build();
+        .define("ADA_BUILD_PROFILE", &profile);
+    
+    // Add coverage flags if enabled
+    if coverage_enabled {
+        println!("cargo:warning=Coverage instrumentation enabled for C/C++ code");
+        cmake_config
+            .define("ENABLE_COVERAGE", "ON")
+            .define("CMAKE_C_FLAGS", "-fprofile-instr-generate -fcoverage-mapping")
+            .define("CMAKE_CXX_FLAGS", "-fprofile-instr-generate -fcoverage-mapping");
+    }
+    
+    let dst = cmake_config.build();
     
     // Report the location of compile_commands.json for IDE consumption
     let compile_commands_path = dst.join("build").join("compile_commands.json");

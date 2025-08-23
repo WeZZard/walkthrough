@@ -2,21 +2,26 @@
 members = [
     "tracer_backend",
     "third_parties",
+    "query_engine",
+    "utils/coverage_helper",
     # Future components will be added here:
     # "tracer",
-    # "query_engine",
     # "mcp_server",
 ]
 
 # Use resolver 2 for better dependency resolution
 resolver = "2"
 
+# Workspace-wide features
+[workspace.metadata.coverage]
+enabled = false
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["ADA Team"]
+authors = ["WeZZard"]
 license = "MIT"
-repository = "https://github.com/ada-project/ada"
+repository = "https://github.com/agentic-infra/ada"
 
 [workspace.dependencies]
 # Common dependencies used across multiple crates

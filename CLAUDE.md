@@ -247,15 +247,40 @@ maturin build --release
 # Run tests for all components
 cargo test --all
 
-# Run tests with coverage (requires cargo-llvm-cov)
-cargo llvm-cov --all-features
+# Run tests with coverage enabled
+cargo test --all --features tracer_backend/coverage,query_engine/coverage
 
-# Build C/C++ components separately (when CMakeLists.txt exists)
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-make -j$(nproc)
-# compile_commands.json will be generated in this build directory
+# Collect and report coverage
+cargo run --manifest-path utils/coverage_helper/Cargo.toml -- full
+
+# NEVER build C/C++ components separately - always use cargo build
 ```
+
+### Coverage Collection
+
+The project uses a unified Cargo-orchestrated coverage system:
+
+```bash
+# Enable coverage for a build/test
+export CARGO_FEATURE_COVERAGE=1
+cargo build --features tracer_backend/coverage,query_engine/coverage
+cargo test --features tracer_backend/coverage,query_engine/coverage
+
+# Collect coverage data
+cargo run --manifest-path utils/coverage_helper/Cargo.toml -- collect
+
+# Generate coverage report
+cargo run --manifest-path utils/coverage_helper/Cargo.toml -- report --format lcov
+
+# Full coverage workflow (clean, test, collect, report)
+cargo run --manifest-path utils/coverage_helper/Cargo.toml -- full
+```
+
+Coverage is controlled through feature flags:
+- `tracer_backend/coverage` - Enable C/C++ coverage instrumentation
+- `query_engine/coverage` - Enable Python module coverage
+- Coverage data is collected in `target/coverage/`
+- LLVM tools are used consistently across all languages
 
 ### IDE/Editor Integration
 

@@ -3,8 +3,8 @@
 //! This library provides the Rust interface to the native tracer backend
 //! components built with Frida.
 
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_uint};
+use std::ffi::CString;
+use std::os::raw::{c_char, c_uint};
 use std::path::Path;
 use std::ptr;
 
@@ -23,7 +23,7 @@ pub mod ffi {
     
     #[cfg(not(has_bindgen))]
     pub mod manual {
-        use std::os::raw::{c_char, c_int, c_uint, c_void};
+        use std::os::raw::{c_char, c_int, c_uint};
         
         #[repr(C)]
         pub struct FridaController {

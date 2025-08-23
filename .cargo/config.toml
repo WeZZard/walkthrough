@@ -1,0 +1,26 @@
+# Cargo configuration for ADA project
+
+[alias]
+# Normal test without coverage
+test-nocov = "test --all"
+
+# Test with coverage enabled
+test-cov = "test --all --features tracer_backend/coverage,query_engine/coverage"
+
+# Build with coverage
+build-cov = "build --all --features tracer_backend/coverage,query_engine/coverage"
+
+# Clean coverage data
+clean-cov = "run --manifest-path utils/coverage_helper/Cargo.toml -- clean"
+
+# Generate coverage report
+cov-report = "run --manifest-path utils/coverage_helper/Cargo.toml -- report"
+
+# Full coverage workflow
+coverage = "run --manifest-path utils/coverage_helper/Cargo.toml -- full"
+
+[env]
+# Set LLVM profile environment variables when coverage is enabled
+RUSTFLAGS = { value = "-C instrument-coverage", condition = { env = "CARGO_FEATURE_COVERAGE", set = true } }
+LLVM_PROFILE_FILE = { value = "target/coverage/prof-%p-%m.profraw", condition = { env = "CARGO_FEATURE_COVERAGE", set = true } }
+

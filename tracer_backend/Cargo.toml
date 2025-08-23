@@ -30,6 +30,7 @@ path = "src/bin/tracer.rs"
 [features]
 default = []
 integration-tests = []
+coverage = []  # Enable coverage instrumentation for C/C++ code
 
 [dev-dependencies]
 tempfile = "3.8"
