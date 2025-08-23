@@ -11,9 +11,12 @@ Verify the native agent loads via the QuickJS loader and runs `frida_agent_main`
 
 ## Procedure
 1. Build with `./utils/init_third_parties.sh && cargo build --release`.
-2. Run `tracer spawn ./target/debug/test_cli --output traces/run1`.
+2. Run `tracer spawn .target/debug/tracer_backend/test/test_cli --output traces/run1`.
 3. Observe logs; confirm agent hook logs.
 4. Validate agent saw pid/session_id (log or control block handshake)
+5. Run `tracer spawn .target/debug/tracer_backend/test/test_runloop --output traces/run1`.
+6. Observe logs; confirm agent hook logs.
+7. Validate agent saw pid/session_id (log or control block handshake)
 
 ## Acceptance
 - No crashes; agent hook log visible; agent opened SHM with unique names; process resumes and runs for N seconds.
