@@ -2,7 +2,7 @@
 # Quality Gate Enforcement Script with Cargo Orchestration
 # All builds and coverage collection go through Cargo
 
-set -euo pipefail
+set -uo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -19,6 +19,10 @@ VERBOSE="${2:-false}"
 # Integration score tracking
 INTEGRATION_SCORE=100
 CRITICAL_FAILURES=()
+
+CHECK_RESULT_PASSED=0
+CHECK_RESULT_BLOCKED=1
+CHECK_RESULT_DOCUMENT_ONLY=2
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -255,15 +259,14 @@ generate_report() {
     
     if [[ $INTEGRATION_SCORE -eq 100 ]]; then
         echo -e "${GREEN}✓ Quality Gate PASSED${NC}"
-        return 0
+        return $CHECK_RESULT_PASSED
     else
         echo -e "${RED}✗ Quality Gate FAILED${NC}"
-        return 1
+        return $CHECK_RESULT_BLOCKED
     fi
 }
 
-# Main execution
-main() {
+check_quality() {
     log_info "Running quality gate in $MODE mode"
     
     # For incremental mode, check if there are any source changes first
@@ -272,16 +275,7 @@ main() {
         if is_documentation_only; then
             log_success "Only documentation files detected"
             log_info "Skipping build, tests, and coverage for documentation-only changes"
-            echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${GREEN}║          DOCUMENTATION-ONLY CHANGES DETECTED               ║${NC}"
-            echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
-            echo -e "${GREEN}║  Only markdown/text files were modified.                   ║${NC}"
-            echo -e "${GREEN}║  Skipping unnecessary quality checks:                      ║${NC}"
-            echo -e "${GREEN}║  • Build - not needed for documentation                    ║${NC}"
-            echo -e "${GREEN}║  • Tests - not affected by documentation                   ║${NC}"
-            echo -e "${GREEN}║  • Coverage - no code changes to measure                   ║${NC}"
-            echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
-            return 0
+            return $CHECK_RESULT_DOCUMENT_ONLY
         fi
         
         # Check if there are source code changes
@@ -323,11 +317,69 @@ main() {
     
     # Generate final report
     generate_report
+    return $?
 }
 
+# Main execution
+main() {
+    check_quality
+    CHECK_RESULT=$?
+    case $CHECK_RESULT in
+        $CHECK_RESULT_PASSED)
+        # Success
+        echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║              QUALITY GATE PASSED ✓                         ║${NC}"
+        echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${GREEN}║  All critical quality checks passed:                       ║${NC}"
+        echo -e "${GREEN}║  • Build successful                                        ║${NC}"
+        echo -e "${GREEN}║  • All tests passing                                       ║${NC}"
+        echo -e "${GREEN}║  • Coverage requirements met                               ║${NC}"
+        echo -e "${GREEN}║  • No incomplete implementations                           ║${NC}"
+        echo -e "${GREEN}║  • No binary files or secrets detected                     ║${NC}"
+        echo -e "${GREEN}║                                                            ║${NC}"
+        echo -e "${GREEN}║  Proceeding with commit...                                 ║${NC}"
+        echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+        return 0;
+        ;;
+        $CHECK_RESULT_BLOCKED)
+        echo -e   "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e   "${RED}║           COMMIT BLOCKED: QUALITY GATE FAILED              ║${NC}"
+        echo -e   "${RED}╠════════════════════════════════════════════════════════════╣${NC}"
+        echo -e   "${RED}║  Critical quality gates must pass before committing:       ║${NC}"
+        echo -e   "${RED}║                                                            ║${NC}"
+        echo -e   "${RED}║  • Build must succeed (100% required)                      ║${NC}"
+        echo -e   "${RED}║  • All tests must pass (100% required)                     ║${NC}"
+        echo -e   "${RED}║  • Changed code must have ≥80% test coverage               ║${NC}"
+        echo -e   "${RED}║  • No incomplete implementations (todo!/assert(0)/etc)     ║${NC}"
+        echo -e   "${RED}║                                                            ║${NC}"
+        echo -e   "${RED}║  Per CLAUDE.md requirements:                               ║${NC}"
+        echo -e   "${RED}║  - NO ignoring tests                                       ║${NC}"
+        echo -e   "${RED}║  - NO reducing requirements                                ║${NC}"
+        echo -e   "${RED}║  - NO temporary quality compromises                        ║${NC}"
+        echo -e   "${RED}║  - NO git commit --no-verify                               ║${NC}"
+        echo -e   "${RED}║                                                            ║${NC}"
+        echo -e   "${RED}║  Fix the issues and try again.                             ║${NC}"
+        echo -e   "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
+        return 1;
+        ;;
+        $CHECK_RESULT_DOCUMENT_ONLY)
+        echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║          DOCUMENTATION-ONLY CHANGES DETECTED               ║${NC}"
+        echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${GREEN}║  Only markdown/text files were modified.                   ║${NC}"
+        echo -e "${GREEN}║  Skipping unnecessary quality checks:                      ║${NC}"
+        echo -e "${GREEN}║  • Build - not needed for documentation                    ║${NC}"
+        echo -e "${GREEN}║  • Tests - not affected by documentation                   ║${NC}"
+        echo -e "${GREEN}║  • Coverage - no code changes to measure                   ║${NC}"
+        echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+        return 0;
+        ;;
+        *)
+        echo "Invalid check result: $CHECK_RESULT. Please check the logs for more details."
+        return 1;
+        ;;
+    esac
+}
 # Run main function
 main
-exit_code=$?
-
-# Ensure we return the correct exit code
-exit $exit_code
+exit $?

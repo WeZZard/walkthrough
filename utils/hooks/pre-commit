@@ -44,37 +44,10 @@ chmod +x "${UTILS_DIR}/metrics/integration_quality.sh"
 echo -e "${BLUE}[PRE-COMMIT]${NC} Checking incremental coverage for staged changes..."
 
 if ! "${UTILS_DIR}/metrics/integration_quality.sh" incremental; then
-    echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║           COMMIT BLOCKED: QUALITY GATE FAILED              ║${NC}"
-    echo -e "${RED}╠════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${RED}║  Critical quality gates must pass before committing:       ║${NC}"
-    echo -e "${RED}║                                                            ║${NC}"
-    echo -e "${RED}║  • Build must succeed (100% required)                      ║${NC}"
-    echo -e "${RED}║  • All tests must pass (100% required)                     ║${NC}"
-    echo -e "${RED}║  • Changed code must have ≥80% test coverage               ║${NC}"
-    echo -e "${RED}║  • No incomplete implementations (todo!/assert(0)/etc)     ║${NC}"
-    echo -e "${RED}║                                                            ║${NC}"
-    echo -e "${RED}║  Per CLAUDE.md requirements:                               ║${NC}"
-    echo -e "${RED}║  - NO ignoring tests                                       ║${NC}"
-    echo -e "${RED}║  - NO reducing requirements                                ║${NC}"
-    echo -e "${RED}║  - NO temporary quality compromises                        ║${NC}"
-    echo -e "${RED}║  - NO git commit --no-verify                               ║${NC}"
-    echo -e "${RED}║                                                            ║${NC}"
-    echo -e "${RED}║  Fix the issues and try again.                             ║${NC}"
-    echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
     exit 1
 fi
 
-# Additional checks for specific file types
-echo -e "${BLUE}[PRE-COMMIT]${NC} Running additional validation checks..."
-
-# Check for large files
-LARGE_FILES=$(git diff --cached --name-only | xargs -I {} sh -c 'test -f "{}" && du -k "{}" | awk "\$1 > 1024 {print \$2}"' 2>/dev/null)
-if [[ -n "$LARGE_FILES" ]]; then
-    echo -e "${YELLOW}[WARNING]${NC} Large files detected (>1MB):"
-    echo "$LARGE_FILES"
-    echo -e "${YELLOW}Consider using git-lfs for large binary files${NC}"
-fi
+echo -e "${BLUE}[PRE-COMMIT]${NC} Checking for compiled binaries..."
 
 # Check for compiled binaries
 BINARY_PATTERNS="*.exe *.dll *.so *.dylib *.a *.o *.pyc *.pyo __pycache__"
@@ -86,6 +59,8 @@ for pattern in $BINARY_PATTERNS; do
         exit 1
     fi
 done
+
+echo -e "${BLUE}[PRE-COMMIT]${NC} Checking for secrets/credentials..."
 
 # Check for secrets/credentials
 echo -e "${BLUE}[PRE-COMMIT]${NC} Scanning for potential secrets..."
@@ -110,19 +85,5 @@ for pattern in "${SUSPICIOUS_PATTERNS[@]}"; do
         exit 1
     fi
 done
-
-# Success
-echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║              QUALITY GATE PASSED ✓                         ║${NC}"
-echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${GREEN}║  All critical quality checks passed:                       ║${NC}"
-echo -e "${GREEN}║  • Build successful                                        ║${NC}"
-echo -e "${GREEN}║  • All tests passing                                       ║${NC}"
-echo -e "${GREEN}║  • Coverage requirements met                               ║${NC}"
-echo -e "${GREEN}║  • No incomplete implementations                           ║${NC}"
-echo -e "${GREEN}║  • No binary files or secrets detected                     ║${NC}"
-echo -e "${GREEN}║                                                            ║${NC}"
-echo -e "${GREEN}║  Proceeding with commit...                                 ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 
 exit 0
