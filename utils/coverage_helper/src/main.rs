@@ -1,3 +1,68 @@
+//! # Coverage Helper for ADA Project
+//! 
+//! This tool provides unified coverage collection for Rust, C/C++, and Python code
+//! using LLVM coverage tools that come with Rust or cargo-llvm-cov.
+//! 
+//! ## How It Works
+//! 
+//! Both Rust and C/C++ use the same LLVM coverage infrastructure:
+//! - **Compile flags**: `-fprofile-instr-generate -fcoverage-mapping`
+//! - **Output format**: `.profraw` files (raw profile data)
+//! - **Processing**: `llvm-profdata` merges `.profraw` → `.profdata`
+//! - **Reporting**: `llvm-cov` generates reports from `.profdata`
+//! 
+//! ## Usage Examples
+//! 
+//! ```bash
+//! # Clean old coverage data
+//! coverage_helper clean
+//! 
+//! # Run full coverage workflow
+//! coverage_helper full --format lcov
+//! 
+//! # Or step by step:
+//! coverage_helper clean
+//! # ... run tests with LLVM_PROFILE_FILE set ...
+//! coverage_helper collect
+//! coverage_helper report --format html
+//! ```
+//! 
+//! ## C/C++ Coverage Setup
+//! 
+//! In CMakeLists.txt:
+//! ```cmake
+//! if(ENABLE_COVERAGE)
+//!     add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+//!     add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+//! endif()
+//! ```
+//! 
+//! Then build with: `cmake -B build -DENABLE_COVERAGE=ON`
+//! 
+//! ## Environment Variables
+//! 
+//! - `LLVM_PROFILE_FILE`: Where to write .profraw files (e.g., "target/coverage/%p-%m.profraw")
+//! - `CARGO_FEATURE_COVERAGE`: Set to "1" to enable coverage in Cargo builds
+//! - `RUSTFLAGS`: Should include "-C instrument-coverage" for Rust coverage
+//! 
+//! ## Tool Discovery
+//! 
+//! The helper automatically finds LLVM tools in these locations:
+//! 1. System PATH
+//! 2. Homebrew LLVM: `/opt/homebrew/opt/llvm/bin/` (macOS ARM64)
+//! 3. cargo-llvm-cov bundled tools (via `cargo llvm-cov show-env`)
+//! 
+//! ## Troubleshooting
+//! 
+//! If "llvm-profdata not found":
+//! - Install LLVM: `brew install llvm` (macOS) or `apt install llvm` (Linux)
+//! - Or install cargo-llvm-cov: `cargo install cargo-llvm-cov`
+//! 
+//! If no coverage data generated:
+//! - Ensure code was compiled with coverage flags
+//! - Check LLVM_PROFILE_FILE is set correctly
+//! - Verify tests actually executed the instrumented code
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::env;
@@ -145,6 +210,84 @@ fn collect_coverage() -> Result<()> {
     Ok(())
 }
 
+/// Find LLVM tools (llvm-profdata, llvm-cov) in various locations.
+/// 
+/// This function searches for LLVM tools in the following order:
+/// 1. System PATH - if already available
+/// 2. Homebrew LLVM installation - common on macOS
+/// 3. cargo-llvm-cov's bundled version - if installed
+/// 
+/// # Why this is needed
+/// 
+/// On macOS, even though LLVM tools may be installed via Homebrew,
+/// they're often not in PATH because macOS ships its own (different)
+/// versions with Xcode. This function ensures we can find the right
+/// LLVM tools that are compatible with our coverage instrumentation.
+/// 
+/// # Example paths searched:
+/// - `/opt/homebrew/opt/llvm/bin/llvm-profdata` (macOS ARM64)
+/// - `/usr/local/opt/llvm/bin/llvm-profdata` (macOS x86_64)
+/// - `/opt/homebrew/Cellar/llvm/*/bin/llvm-profdata` (versioned installs)
+fn find_llvm_tool(tool_name: &str) -> Result<PathBuf> {
+    // Try to find the tool in various locations
+    
+    // 1. Check if it's already in PATH
+    if let Ok(output) = Command::new("which").arg(tool_name).output() {
+        if output.status.success() {
+            let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+    
+    // 2. Try Homebrew LLVM installation
+    let homebrew_paths = vec![
+        format!("/opt/homebrew/opt/llvm/bin/{}", tool_name),
+        format!("/usr/local/opt/llvm/bin/{}", tool_name),
+        format!("/opt/homebrew/Cellar/llvm/*/bin/{}", tool_name),
+    ];
+    
+    for path_pattern in homebrew_paths {
+        if let Ok(entries) = glob::glob(&path_pattern) {
+            for entry in entries.flatten() {
+                if entry.exists() {
+                    return Ok(entry);
+                }
+            }
+        }
+    }
+    
+    // 3. Try cargo-llvm-cov's bundled version
+    if let Ok(output) = Command::new("cargo")
+        .args(&["llvm-cov", "show-env"])
+        .output() 
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            if line.starts_with("LLVM_COV=") || line.starts_with("LLVM_PROFDATA=") {
+                let path = line.split('=').nth(1).unwrap_or("");
+                let tool_dir = PathBuf::from(path).parent().unwrap().to_path_buf();
+                let tool_path = tool_dir.join(tool_name);
+                if tool_path.exists() {
+                    return Ok(tool_path);
+                }
+            }
+        }
+    }
+    
+    anyhow::bail!("Could not find {}. Please install LLVM tools via 'brew install llvm' or 'cargo install cargo-llvm-cov'", tool_name)
+}
+
+/// Collect Rust coverage using LLVM tools.
+/// 
+/// This function:
+/// 1. Finds all .profraw files generated by Rust tests
+/// 2. Merges them into a single .profdata file using llvm-profdata
+/// 3. Exports to LCOV format using llvm-cov
+/// 
+/// The same LLVM tools are used for both Rust and C/C++ coverage,
+/// providing a unified coverage solution.
 fn collect_rust_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
     println!("Collecting Rust coverage...");
     
@@ -163,8 +306,11 @@ fn collect_rust_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
     
     let profdata_path = coverage_dir.join("rust.profdata");
     
+    // Find llvm-profdata tool
+    let llvm_profdata = find_llvm_tool("llvm-profdata")?;
+    
     // Merge profraw files into profdata
-    let mut merge_cmd = Command::new("llvm-profdata");
+    let mut merge_cmd = Command::new(&llvm_profdata);
     merge_cmd.arg("merge")
         .arg("-sparse")
         .arg("-o")
@@ -193,7 +339,8 @@ fn collect_rust_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
         .collect();
     
     if !test_binaries.is_empty() {
-        let mut export_cmd = Command::new("llvm-cov");
+        let llvm_cov = find_llvm_tool("llvm-cov")?;
+        let mut export_cmd = Command::new(&llvm_cov);
         export_cmd.arg("export")
             .arg("--format=lcov")
             .arg("--instr-profile")
@@ -216,6 +363,21 @@ fn collect_rust_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Collect C/C++ coverage using the same LLVM tools as Rust.
+/// 
+/// This demonstrates the key benefit: Rust's LLVM tools work perfectly
+/// for C/C++ code compiled with clang/gcc using:
+/// - `-fprofile-instr-generate -fcoverage-mapping`
+/// 
+/// Process:
+/// 1. Find .profraw files from C/C++ test executables
+/// 2. Merge them using llvm-profdata (same tool as Rust)
+/// 3. Export to LCOV using llvm-cov (same tool as Rust)
+/// 
+/// This unified approach means:
+/// - No need for gcov/lcov for C/C++
+/// - Same toolchain for all languages
+/// - Consistent output format (LCOV) for all coverage
 fn collect_cpp_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
     println!("Collecting C/C++ coverage...");
     
@@ -239,7 +401,8 @@ fn collect_cpp_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
     let profdata_path = coverage_dir.join("cpp.profdata");
     
     // Merge profraw files
-    let mut merge_cmd = Command::new("llvm-profdata");
+    let llvm_profdata = find_llvm_tool("llvm-profdata")?;
+    let mut merge_cmd = Command::new(&llvm_profdata);
     merge_cmd.arg("merge")
         .arg("-sparse")
         .arg("-o")
@@ -270,7 +433,8 @@ fn collect_cpp_coverage(workspace: &Path, coverage_dir: &Path) -> Result<()> {
     if !test_binaries.is_empty() {
         let lcov_path = coverage_dir.join("cpp.lcov");
         
-        let mut export_cmd = Command::new("llvm-cov");
+        let llvm_cov = find_llvm_tool("llvm-cov")?;
+        let mut export_cmd = Command::new(&llvm_cov);
         export_cmd.arg("export")
             .arg("--format=lcov")
             .arg("--instr-profile")
