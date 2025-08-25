@@ -43,9 +43,7 @@ fn main() {
     if coverage_enabled {
         println!("cargo:warning=Coverage instrumentation enabled for C/C++ code");
         cmake_config.define("ENABLE_COVERAGE", "ON");
-        
-        // Also set environment variable for LLVM profile output
-        println!("cargo:rustc-env=LLVM_PROFILE_FILE={}/coverage/cpp-%p-%m.profraw", workspace_root.display());
+        // Don't set LLVM_PROFILE_FILE here - it should be set at runtime when tests execute
     }
     
     let dst = cmake_config.build();

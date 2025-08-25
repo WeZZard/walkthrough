@@ -519,22 +519,100 @@ fn collect_rust_coverage(workspace: &Path, coverage_dir: &Path, output_lcov: &Pa
 fn collect_cpp_coverage(workspace: &Path, coverage_dir: &Path, output_lcov: &Path) -> Result<()> {
     println!("Collecting C/C++ coverage...");
     
-    // Find all .profraw files from C/C++ tests
-    let cpp_profraw_files: Vec<PathBuf> = WalkDir::new(workspace.join("target"))
+    // First, run all C++ test binaries to generate coverage data
+    println!("  Running C++ tests with coverage instrumentation...");
+    
+    // Find all C++ test binaries
+    let test_binary_patterns = vec![
+        workspace.join("target/release/tracer_backend/test"),
+        workspace.join("target/debug/tracer_backend/test"),
+        workspace.join("target/release/build/tracer_backend-*/out/build"),
+        workspace.join("target/debug/build/tracer_backend-*/out/build"),
+    ];
+    
+    let mut test_binaries = Vec::new();
+    for pattern in test_binary_patterns {
+        if let Ok(entries) = glob::glob(&format!("{}/**/test_*", pattern.display())) {
+            for entry in entries.flatten() {
+                if entry.is_file() && entry.to_str().map_or(false, |s| {
+                    s.contains("test_") && 
+                    !s.ends_with(".o") && 
+                    !s.ends_with(".d") && 
+                    !s.ends_with(".cmake") &&
+                    !s.contains("[")  // Exclude CMake generated files with brackets
+                }) {
+                    // Check if it's executable
+                    if let Ok(metadata) = entry.metadata() {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if metadata.permissions().mode() & 0o111 != 0 {
+                                test_binaries.push(entry);
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            test_binaries.push(entry);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if test_binaries.is_empty() {
+        println!("  No C++ test binaries found. Make sure to build with --features coverage");
+        return Ok(());
+    }
+    
+    println!("  Found {} C++ test binaries", test_binaries.len());
+    
+    // Run each test binary with unique profraw output
+    for (idx, test_binary) in test_binaries.iter().enumerate() {
+        let binary_name = test_binary.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        
+        let profraw_path = coverage_dir.join(format!("cpp_{}_{}.profraw", binary_name, idx));
+        
+        println!("    Running {}", binary_name);
+        
+        let output = Command::new(&test_binary)
+            .env("LLVM_PROFILE_FILE", &profraw_path)
+            .output();
+        
+        match output {
+            Ok(result) => {
+                if !result.status.success() {
+                    println!("      Warning: {} failed with status {}", binary_name, result.status);
+                } else {
+                    println!("      ✓ {} completed", binary_name);
+                }
+            }
+            Err(e) => {
+                println!("      Error running {}: {}", binary_name, e);
+            }
+        }
+    }
+    
+    // Now find all generated .profraw files
+    let cpp_profraw_files: Vec<PathBuf> = WalkDir::new(coverage_dir)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
             let path = e.path();
             path.extension().map_or(false, |ext| ext == "profraw") &&
-            path.to_str().map_or(false, |s| s.contains("tracer_backend"))
+            path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("cpp_"))
         })
         .map(|e| e.path().to_path_buf())
         .collect();
     
     if cpp_profraw_files.is_empty() {
-        println!("No C/C++ coverage data found.");
+        println!("  No C/C++ coverage data generated.");
         return Ok(());
     }
+    
+    println!("  Generated {} profraw files", cpp_profraw_files.len());
     
     // Use C++ toolchain (prefers Xcode on macOS)
     let toolchain = toolchains::detect_cpp_toolchain()?;

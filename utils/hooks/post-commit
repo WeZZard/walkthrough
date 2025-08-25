@@ -25,10 +25,21 @@ generate_reports() {
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
     COMMIT_SHA=$(git rev-parse --short HEAD)
     REPORT_NAME="coverage_${COMMIT_SHA}_${TIMESTAMP}"
+    LOG_FILE="${REPORTS_DIR}/${REPORT_NAME}.log"
     
-    # Run full coverage analysis using the new coverage_helper
-    echo "Running full coverage collection..." >> "${COVERAGE_DIR}/${REPORT_NAME}.log"
-    cargo run --manifest-path "${REPO_ROOT}/utils/coverage_helper/Cargo.toml" -- full >> "${COVERAGE_DIR}/${REPORT_NAME}.log" 2>&1
+    # Run coverage collection and report generation
+    echo "Running coverage collection..." >> "${LOG_FILE}"
+    
+    # First collect coverage data
+    if cargo run --release --manifest-path "${REPO_ROOT}/utils/coverage_helper/Cargo.toml" -- collect >> "${LOG_FILE}" 2>&1; then
+        echo "Coverage collection successful" >> "${LOG_FILE}"
+        
+        # Then generate HTML report
+        echo "Generating HTML report..." >> "${LOG_FILE}"
+        cargo run --release --manifest-path "${REPO_ROOT}/utils/coverage_helper/Cargo.toml" -- report --format html >> "${LOG_FILE}" 2>&1
+    else
+        echo "Coverage collection failed" >> "${LOG_FILE}"
+    fi
     
     # Create coverage trend file if it doesn't exist
     TREND_FILE="${COVERAGE_DIR}/coverage_trend.csv"
@@ -54,13 +65,13 @@ generate_reports() {
     
     # Open HTML report if in interactive mode and on macOS
     if [[ -t 1 ]] && [[ "$(uname)" == "Darwin" ]]; then
-        if [[ -f "${REPORTS_DIR}/html/index.html" ]]; then
+        if [[ -f "${REPORTS_DIR}/index.html" ]]; then
             echo -e "${BLUE}[POST-COMMIT]${NC} Opening coverage report in browser..."
-            open "${REPORTS_DIR}/html/index.html" 2>/dev/null || true
+            open "${REPORTS_DIR}/index.html" 2>/dev/null || true
         fi
     fi
     
-    echo -e "${GREEN}[POST-COMMIT]${NC} Coverage report generated: ${REPORTS_DIR}/html/index.html"
+    echo -e "${GREEN}[POST-COMMIT]${NC} Coverage report generated: ${REPORTS_DIR}/index.html"
     echo -e "${GREEN}[POST-COMMIT]${NC} Coverage trend updated: ${TREND_FILE}"
 }
 
