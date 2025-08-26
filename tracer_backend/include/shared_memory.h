@@ -40,8 +40,8 @@ uint32_t shared_memory_get_pid(void);
 // Create shared memory with unique name derived from role, pid and session id.
 //
 // - parameter role: The role of the shared memory segment.
-// - parameter pid: The host process pid.
-// - parameter session_id: The host process session id.
+// - parameter pid: The host process pid. You get it from `shared_memory_get_pid()`.
+// - parameter session_id: The host process session id. You get it from `shared_memory_get_session_id()`.
 // - parameter size: The size of the shared memory segment.
 // - parameter out_name: The name of the shared memory segment.
 // - parameter out_name_len: The length of the shared memory segment name.

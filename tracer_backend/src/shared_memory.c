@@ -19,7 +19,11 @@ typedef struct __SharedMemory {
     bool is_creator;
 } __SharedMemory;
 
+#if defined(NDEBUG)
 #define DEBUG_LOG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define DEBUG_LOG(...)
+#endif
 
 // Simple 32-bit FNV-1a hash for short role identifiers
 static uint32_t shm_hash32(const char* s)

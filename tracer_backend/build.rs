@@ -143,6 +143,8 @@ fn main() {
         ("build/test_ring_buffer_attach", "test/test_ring_buffer_attach"),
         ("build/test_shared_memory", "test/test_shared_memory"),
         ("build/test_spawn_method", "test/test_spawn_method"),
+        ("build/test_thread_registry", "test/test_thread_registry"),
+        ("build/test_thread_registry_integration", "test/test_thread_registry_integration"),
         ("build/test_controller_full_lifecycle", "test/test_controller_full_lifecycle"),
         ("build/test_integration", "test/test_integration"),
         ("build/test_agent_loader", "test/test_agent_loader"),
