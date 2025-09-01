@@ -13,7 +13,7 @@ extern "C" {
 
 #include "thread_registry_private.h"
 
-using namespace ada;
+// Don't use "using namespace" to avoid ambiguity with C types
 
 class ThreadRegistryTest : public ::testing::Test {
 private:
@@ -22,7 +22,7 @@ private:
 protected:
     void* memory = nullptr;
     size_t memory_size = 0;
-    ThreadRegistryCpp* registry = nullptr;
+    ada::internal::ThreadRegistry* registry = nullptr;
 
     static void SetUpTestSuite() {
         if (!shm) {
@@ -45,7 +45,7 @@ protected:
         memory = shared_memory_get_address(shm);
         memory_size = shared_memory_get_size(shm);
         
-        registry = ThreadRegistryCpp::create(memory, memory_size);
+        registry = ada::internal::ThreadRegistry::create(memory, memory_size);
         ASSERT_NE(registry, nullptr) << "Failed to initialize thread registry";
     }
 
@@ -95,7 +95,7 @@ TEST_F(ThreadRegistryTest, thread_registry__concurrent_registration__then_unique
     std::vector<std::thread> threads;
     std::atomic<int> success_count{0};
     std::vector<uint32_t> slots(num_threads);
-    std::vector<ThreadLaneSetCpp*> results(num_threads);
+    std::vector<ada::internal::ThreadLaneSet*> results(num_threads);
     
     for (int i = 0; i < num_threads; i++) {
         threads.emplace_back([this, &results, &success_count, i]() {
@@ -284,7 +284,7 @@ TEST_F(ThreadRegistryTest, free_queue__return_and_get__then_works) {
 // Test memory ordering guarantees
 TEST_F(ThreadRegistryTest, memory_ordering__registration__then_visible_to_drain) {
     std::atomic<bool> registered{false};
-    ThreadLaneSetCpp* thread_lanes = nullptr;
+    ada::internal::ThreadLaneSet* thread_lanes = nullptr;
     
     std::thread writer([this, &thread_lanes, &registered]() {
         thread_lanes = registry->register_thread(9999);

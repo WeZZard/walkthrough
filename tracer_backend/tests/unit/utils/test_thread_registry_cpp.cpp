@@ -11,14 +11,14 @@ extern "C" {
 
 #include "thread_registry_private.h"
 
-using namespace ada;
+// Don't use "using namespace" to avoid ambiguity with C types
 
 class ThreadRegistryCppTest : public ::testing::Test {
 protected:
     static SharedMemoryRef shm;
     void* memory = nullptr;
     size_t memory_size = 0;
-    ThreadRegistryCpp* registry = nullptr;
+    ada::internal::ThreadRegistry* registry = nullptr;
 
     static void SetUpTestSuite() {
         if (!shm) {
@@ -42,7 +42,7 @@ protected:
         memory = shared_memory_get_address(shm);
         memory_size = shared_memory_get_size(shm);
 
-        registry = ThreadRegistryCpp::create(memory, memory_size);
+        registry = ada::internal::ThreadRegistry::create(memory, memory_size);
         ASSERT_NE(registry, nullptr) << "Failed to create C++ registry";
         
         // Validate structure
@@ -112,7 +112,7 @@ TEST_F(ThreadRegistryCppTest, cpp_registry__memory_layout__then_debuggable) {
 TEST_F(ThreadRegistryCppTest, cpp_registry__concurrent_registration__then_unique_slots) {
     const int num_threads = 10;
     std::vector<std::thread> threads;
-    std::vector<ThreadLaneSetCpp*> results(num_threads);
+    std::vector<ada::internal::ThreadLaneSet*> results(num_threads);
     
     for (int i = 0; i < num_threads; i++) {
         threads.emplace_back([this, &results, i]() {
@@ -203,7 +203,7 @@ TEST_F(ThreadRegistryCppTest, cpp_registry__debug_dump__then_produces_output) {
     printf("Debug output:\n%s\n", output.c_str());
     
     // Verify output contains expected information
-    EXPECT_NE(output.find("ThreadRegistryCpp Debug Dump"), std::string::npos);
+    EXPECT_NE(output.find("ThreadRegistry Debug Dump"), std::string::npos);
     EXPECT_NE(output.find("Thread count: 2"), std::string::npos);
     EXPECT_NE(output.find("tid=3039"), std::string::npos);  // 12345 in hex
     EXPECT_NE(output.find("tid=10932"), std::string::npos);  // 67890 in hex
@@ -220,7 +220,7 @@ TEST_F(ThreadRegistryCppTest, cpp_registry__c_compatibility__then_works) {
     ASSERT_NE(c_lanes, nullptr);
     
     // Verify it's actually our C++ implementation
-    auto* cpp_registry = reinterpret_cast<ThreadRegistryCpp*>(c_registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(c_registry);
     EXPECT_EQ(cpp_registry->thread_count.load(), 1);
     
     // Debug dump through C interface

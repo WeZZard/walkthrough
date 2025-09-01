@@ -98,6 +98,9 @@ fn main() {
     println!("cargo:rustc-link-lib=static=tracer_controller");
     println!("cargo:rustc-link-lib=static=tracer_utils");
     
+    // Link C++ standard library (needed for ring_buffer.cpp and thread_registry.cpp)
+    println!("cargo:rustc-link-lib=c++");
+    
     // Link Frida libraries - use absolute paths
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let third_parties = manifest_dir.parent().unwrap().join("third_parties");

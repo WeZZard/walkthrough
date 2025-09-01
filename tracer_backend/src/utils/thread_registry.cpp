@@ -7,10 +7,12 @@
 #include <cassert>
 
 namespace ada {
+namespace internal {
 
 // Static TLS for fast path
-thread_local ThreadLaneSetCpp* tls_my_lanes_cpp = nullptr;
+thread_local ThreadLaneSet* tls_current_lanes = nullptr;
 
+}  // namespace internal
 }  // namespace ada
 
 // =============================================================================
@@ -29,19 +31,19 @@ void thread_registry_set_my_lanes(ThreadLaneSet* lanes);
 
 // Use C++ implementation but expose C interface
 ThreadRegistry* thread_registry_init(void* memory, size_t size) {
-    auto* cpp_registry = ada::ThreadRegistryCpp::create(memory, size);
+    auto* cpp_registry = ada::internal::ThreadRegistry::create(memory, size);
     return reinterpret_cast<ThreadRegistry*>(cpp_registry);
 }
 
 void thread_registry_deinit(ThreadRegistry* registry) {
     if (!registry) return;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
-    cpp_registry->~ThreadRegistryCpp();
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
+    cpp_registry->~ThreadRegistry();
 }
 
 ThreadLaneSet* thread_registry_register(ThreadRegistry* registry, uintptr_t thread_id) {
     if (!registry) return nullptr;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     auto* cpp_lanes = cpp_registry->register_thread(thread_id);
     ThreadLaneSet* lanes = reinterpret_cast<ThreadLaneSet*>(cpp_lanes);
     
@@ -55,7 +57,7 @@ ThreadLaneSet* thread_registry_register(ThreadRegistry* registry, uintptr_t thre
 
 ThreadLaneSet* thread_registry_get_thread_lanes(ThreadRegistry* registry, uintptr_t thread_id) {
     if (!registry) return nullptr;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     
     // Search for existing registration
     for (uint32_t i = 0; i < cpp_registry->thread_count.load(); ++i) {
@@ -73,12 +75,12 @@ ThreadLaneSet* thread_registry_get_my_lanes(void) {
 
 void thread_registry_set_my_lanes(ThreadLaneSet* lanes) {
     tls_my_lanes = lanes;
-    ada::tls_my_lanes_cpp = reinterpret_cast<ada::ThreadLaneSetCpp*>(lanes);
+    ada::internal::tls_current_lanes = reinterpret_cast<ada::internal::ThreadLaneSet*>(lanes);
 }
 
 void thread_registry_unregister(ThreadLaneSet* lanes) {
     if (!lanes) return;
-    auto* cpp_lanes = reinterpret_cast<ada::ThreadLaneSetCpp*>(lanes);
+    auto* cpp_lanes = reinterpret_cast<ada::internal::ThreadLaneSet*>(lanes);
     cpp_lanes->active.store(false);
 }
 
@@ -90,7 +92,7 @@ struct RingBuffer* lane_get_active_ring(Lane* lane) {
 
 bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread_id) {
     if (!registry) return false;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     
     // Find and deactivate thread
     for (uint32_t i = 0; i < cpp_registry->thread_count.load(); ++i) {
@@ -104,7 +106,7 @@ bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread
 
 uint32_t thread_registry_get_active_count(ThreadRegistry* registry) {
     if (!registry) return 0;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     
     uint32_t count = 0;
     for (uint32_t i = 0; i < cpp_registry->thread_count.load(); ++i) {
@@ -117,7 +119,7 @@ uint32_t thread_registry_get_active_count(ThreadRegistry* registry) {
 
 ThreadLaneSet* thread_registry_get_thread_at(ThreadRegistry* registry, uint32_t index) {
     if (!registry || index >= MAX_THREADS) return nullptr;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     
     if (index >= cpp_registry->thread_count.load()) return nullptr;
     if (!cpp_registry->thread_lanes[index].active.load()) return nullptr;
@@ -127,32 +129,32 @@ ThreadLaneSet* thread_registry_get_thread_at(ThreadRegistry* registry, uint32_t 
 
 void thread_registry_stop_accepting(ThreadRegistry* registry) {
     if (!registry) return;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     cpp_registry->accepting_registrations.store(false);
 }
 
 void thread_registry_request_shutdown(ThreadRegistry* registry) {
     if (!registry) return;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     cpp_registry->shutdown_requested.store(true);
 }
 
 bool thread_registry_is_shutdown_requested(ThreadRegistry* registry) {
     if (!registry) return true;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     return cpp_registry->shutdown_requested.load();
 }
 
 // Lane operations - delegate to C++ implementation
 bool lane_submit_ring(Lane* lane, uint32_t ring_idx) {
     if (!lane) return false;
-    auto* cpp_lane = reinterpret_cast<ada::LaneCpp*>(lane);
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
     return cpp_lane->submit_ring(ring_idx);
 }
 
 uint32_t lane_take_ring(Lane* lane) {
     if (!lane) return UINT32_MAX;
-    auto* cpp_lane = reinterpret_cast<ada::LaneCpp*>(lane);
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
     
     auto head = cpp_lane->submit_head.load(std::memory_order_relaxed);
     auto tail = cpp_lane->submit_tail.load(std::memory_order_acquire);
@@ -167,7 +169,7 @@ uint32_t lane_take_ring(Lane* lane) {
 
 bool lane_return_ring(Lane* lane, uint32_t ring_idx) {
     if (!lane || ring_idx >= lane->ring_count) return false;
-    auto* cpp_lane = reinterpret_cast<ada::LaneCpp*>(lane);
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
     
     auto head = cpp_lane->free_head.load(std::memory_order_relaxed);
     auto tail = cpp_lane->free_tail.load(std::memory_order_acquire);
@@ -182,7 +184,7 @@ bool lane_return_ring(Lane* lane, uint32_t ring_idx) {
 
 uint32_t lane_get_free_ring(Lane* lane) {
     if (!lane) return UINT32_MAX;
-    auto* cpp_lane = reinterpret_cast<ada::LaneCpp*>(lane);
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
     
     auto head = cpp_lane->free_head.load(std::memory_order_relaxed);
     auto tail = cpp_lane->free_tail.load(std::memory_order_acquire);
@@ -199,7 +201,7 @@ uint32_t lane_get_free_ring(Lane* lane) {
 
 bool lane_swap_active_ring(Lane* lane) {
     if (!lane) return false;
-    auto* cpp_lane = reinterpret_cast<ada::LaneCpp*>(lane);
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
     
     // Get a free ring
     uint32_t new_idx = lane_get_free_ring(lane);
@@ -215,14 +217,14 @@ bool lane_swap_active_ring(Lane* lane) {
 // Debug functions
 void thread_registry_dump(ThreadRegistry* registry) {
     if (!registry) return;
-    auto* cpp_registry = reinterpret_cast<ada::ThreadRegistryCpp*>(registry);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     cpp_registry->debug_dump();
 }
 
 size_t thread_registry_calculate_memory_size(void) {
     // Calculate total memory needed:
-    // - ThreadRegistryCpp object + trailing LaneMemoryLayout structures
-    size_t struct_size = ada::ThreadRegistryCpp::totalSizeNeeded(MAX_THREADS, MAX_THREADS);
+    // - ThreadRegistry object + trailing LaneMemoryLayout structures
+    size_t struct_size = ada::internal::ThreadRegistry::totalSizeNeeded(MAX_THREADS, MAX_THREADS);
     
     // - Ring buffer memory for all lanes
     size_t index_ring_total = MAX_THREADS * RINGS_PER_INDEX_LANE * 64 * 1024;  // 64KB per ring

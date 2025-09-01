@@ -9,14 +9,7 @@
 extern "C" {
 #endif
 
-// Lock-free SPSC ring buffer
-struct RingBuffer {
-    RingBufferHeader* header;
-    void* buffer;
-    // Each event is a fixed size
-    size_t event_size;
-    size_t buffer_size;
-};
+// Lock-free SPSC ring buffer - opaque type
 typedef struct RingBuffer RingBuffer;
 
 // Create ring buffer (initializes header)
@@ -41,6 +34,11 @@ void ring_buffer_reset(RingBuffer* rb);
 
 // Cleanup
 void ring_buffer_destroy(RingBuffer* rb);
+
+// Accessor functions
+size_t ring_buffer_get_event_size(RingBuffer* rb);
+size_t ring_buffer_get_capacity(RingBuffer* rb);
+RingBufferHeader* ring_buffer_get_header(RingBuffer* rb);
 
 #ifdef __cplusplus
 }

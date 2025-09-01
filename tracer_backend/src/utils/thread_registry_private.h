@@ -16,6 +16,7 @@
 // ============================================================================
 
 namespace ada {
+namespace internal {
 
 // Base class for objects with trailing storage (similar to LLVM's TrailingObjects)
 template<typename Derived, typename... TrailingTypes>
@@ -103,7 +104,7 @@ struct LaneMemoryLayout {
 // Enhanced Lane with proper C++ abstractions
 // ============================================================================
 
-class LaneCpp {
+class Lane {
 public:
     // Ring pool management
     std::atomic<uint32_t> active_idx{0};
@@ -125,7 +126,7 @@ public:
     
     // Initialize lane with structured memory
     void initialize(LaneMemoryLayout* layout, uint32_t num_rings, size_t ring_size, size_t event_size) {
-        printf("DEBUG: LaneCpp::initialize start - num_rings=%u, ring_size=%zu\n", num_rings, ring_size);
+        printf("DEBUG: Lane::initialize start - num_rings=%u, ring_size=%zu\n", num_rings, ring_size);
         memory_layout = layout;
         ring_count = num_rings;
         
@@ -154,7 +155,7 @@ public:
         }
         printf("DEBUG: Setting free_tail to %u\n", num_rings - 1);
         free_tail.store(num_rings - 1, std::memory_order_release);
-        printf("DEBUG: LaneCpp::initialize complete\n");
+        printf("DEBUG: Lane::initialize complete\n");
     }
     
     // Submit ring for draining (with bounds checking)
@@ -194,7 +195,7 @@ public:
 // ThreadLaneSet with explicit memory layout
 // ============================================================================
 
-class alignas(CACHE_LINE_SIZE) ThreadLaneSetCpp {
+class alignas(CACHE_LINE_SIZE) ThreadLaneSet {
 public:
     // Thread identification
     uintptr_t thread_id{0};
@@ -202,8 +203,8 @@ public:
     std::atomic<bool> active{false};
     
     // Lanes with structured memory
-    LaneCpp index_lane;
-    LaneCpp detail_lane;
+    Lane index_lane;
+    Lane detail_lane;
     
     // Statistics
     std::atomic<uint64_t> events_generated{0};
@@ -244,12 +245,12 @@ public:
 // ============================================================================
 
 // Forward declaration for CRTP
-class ThreadRegistryCpp;
+class ThreadRegistry;
 
-class ThreadRegistryCpp : public TrailingObjects<ThreadRegistryCpp, 
-                                                  LaneMemoryLayout, 
-                                                  LaneMemoryLayout> {
-    using Base = TrailingObjects<ThreadRegistryCpp, LaneMemoryLayout, LaneMemoryLayout>;
+class ThreadRegistry : public TrailingObjects<ThreadRegistry, 
+                                               LaneMemoryLayout, 
+                                               LaneMemoryLayout> {
+    using Base = TrailingObjects<ThreadRegistry, LaneMemoryLayout, LaneMemoryLayout>;
 public:
     // Registry state
     std::atomic<uint32_t> thread_count{0};
@@ -258,15 +259,15 @@ public:
     
     // Thread lane sets - fixed array, not dynamic
     alignas(CACHE_LINE_SIZE)
-    ThreadLaneSetCpp thread_lanes[MAX_THREADS];
+    ThreadLaneSet thread_lanes[MAX_THREADS];
     
     // Factory method for creating with proper memory layout
-    static ThreadRegistryCpp* create(void* memory, size_t size) {
+    static ThreadRegistry* create(void* memory, size_t size) {
         // Calculate memory needed:
-        // - ThreadRegistryCpp object itself
+        // - ThreadRegistry object itself
         // - LaneMemoryLayout structures (2 per thread)
         // - Ring buffer memory for all lanes
-        size_t struct_size = sizeof(ThreadRegistryCpp) + 
+        size_t struct_size = sizeof(ThreadRegistry) + 
                             (MAX_THREADS * sizeof(LaneMemoryLayout) * 2); // index + detail layouts
         
         size_t index_ring_total = MAX_THREADS * RINGS_PER_INDEX_LANE * 64 * 1024;  // 64KB per ring
@@ -282,7 +283,7 @@ public:
         
         // Placement new with clear memory
         std::memset(memory, 0, size);
-        auto* registry = new (memory) ThreadRegistryCpp();
+        auto* registry = new (memory) ThreadRegistry();
         
         // Get structured tail memory
         auto* index_layouts = registry->getTrailingObject<LaneMemoryLayout>(0);
@@ -332,7 +333,7 @@ public:
     }
     
     // Register thread with better error handling
-    ThreadLaneSetCpp* register_thread(uintptr_t thread_id) {
+    ThreadLaneSet* register_thread(uintptr_t thread_id) {
         if (!accepting_registrations.load(std::memory_order_acquire)) {
             printf("DEBUG: Not accepting registrations\n");
             return nullptr;
@@ -377,7 +378,7 @@ public:
     
     // Debug dump - actually useful!
     void debug_dump() const {
-        printf("=== ThreadRegistryCpp Debug Dump ===\n");
+        printf("=== ThreadRegistry Debug Dump ===\n");
         printf("Address: %p\n", this);
         printf("Thread count: %u\n", thread_count.load());
         printf("Accepting: %s\n", accepting_registrations.load() ? "yes" : "no");
@@ -419,6 +420,7 @@ public:
 // Note: C compatibility layer is implemented in thread_registry.cpp
 // to avoid duplicate symbols and provide proper separation
 
+} // namespace internal
 } // namespace ada
 
 #endif // THREAD_REGISTRY_PRIVATE_H

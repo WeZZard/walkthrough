@@ -57,7 +57,7 @@ TEST_F(RingBufferTest, ring_buffer__create_with_valid_memory__then_returns_valid
     
     // Assert
     ASSERT_NE(rb, nullptr) << "Failed to create ring buffer";
-    EXPECT_EQ(rb->header->capacity, capacity);
+    EXPECT_EQ(ring_buffer_get_capacity(rb), capacity);
     EXPECT_TRUE(ring_buffer_is_empty(rb));
     EXPECT_FALSE(ring_buffer_is_full(rb));
 }
@@ -287,7 +287,7 @@ TEST_P(RingBufferSizeTest, ring_buffer__various_capacities__then_create_success)
     
     // Assert
     ASSERT_NE(rb, nullptr);
-    EXPECT_EQ(rb->header->capacity, capacity);
+    EXPECT_EQ(ring_buffer_get_capacity(rb), capacity);
     
     // Test can write up to capacity - 1 (ring buffer keeps one slot empty)
     for (size_t i = 0; i < capacity - 1; i++) {
