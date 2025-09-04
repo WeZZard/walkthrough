@@ -71,6 +71,13 @@ endif()
 # Generate Configuration Headers
 # ===========================================
 
+# Convert CMAKE_BUILD_TYPE to lowercase for Rust compatibility
+if(CMAKE_BUILD_TYPE)
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" ADA_BUILD_PROFILE_LOWER)
+else()
+    set(ADA_BUILD_PROFILE_LOWER "debug")
+endif()
+
 # Generate ada_paths.h for tests
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/ada_paths.h.in"
@@ -86,6 +93,20 @@ configure_file(
 add_subdirectory(src/utils)        # Utils library (no dependencies)
 add_subdirectory(src/controller)   # Controller library (depends on utils)
 add_subdirectory(src/agent)        # Agent library (depends on utils)
+
+# C API library for Rust FFI
+add_library(tracer_c_api SHARED src/tracer_c_api.cpp)
+target_link_libraries(tracer_c_api 
+    PRIVATE 
+        tracer_controller 
+        tracer_utils
+)
+target_include_directories(tracer_c_api
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 # Build tests if enabled
 if(BUILD_TESTING)
@@ -116,6 +137,12 @@ install(TARGETS tracer_controller
 )
 
 install(TARGETS frida_agent
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(TARGETS tracer_c_api
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin

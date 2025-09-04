@@ -5,12 +5,8 @@
 // Workspace root path
 #define ADA_WORKSPACE_ROOT "@CMAKE_SOURCE_DIR@/.."
 
-// Build profile
-#ifdef CMAKE_BUILD_TYPE
-    #define ADA_BUILD_PROFILE "@CMAKE_BUILD_TYPE@"
-#else
-    #define ADA_BUILD_PROFILE "Debug"
-#endif
+// Build profile - lowercase to match Rust conventions
+#define ADA_BUILD_PROFILE "@ADA_BUILD_PROFILE_LOWER@"
 
 // Binary directory
 #define ADA_BINARY_DIR "@CMAKE_BINARY_DIR@"

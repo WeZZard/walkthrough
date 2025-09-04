@@ -215,13 +215,6 @@ mod tests {
     use serial_test::serial;
     use std::process::Stdio;
     
-    fn integration_tests_enabled() -> bool {
-        match env::var("ADA_RUN_INTEGRATION_TESTS") {
-            Ok(v) => matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),
-            Err(_) => false,
-        }
-    }
-    
     #[test]
     fn test_controller_creation() {
         // Note: This test creates shared memory segments with fixed names
@@ -239,8 +232,11 @@ mod tests {
         assert!(controller.is_ok());
     }
     
-    // Helper function to run C/C++ tests
+    // Helper function to run C/C++ tests with timeout and better error handling
     fn run_c_test(test_name: &str) -> Result<(), String> {
+        use std::time::Duration;
+        use std::process::Stdio;
+        
         // Use absolute paths anchored at the workspace root to avoid cwd issues
         let workspace_root: &str = env!("ADA_WORKSPACE_ROOT");
         let out_dir_const: &str = env!("OUT_DIR");
@@ -268,13 +264,88 @@ mod tests {
             ))?;
 
         println!("Running C test: {}", test_path.display());
+        
+        // Check if binary is executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(test_path)
+                .map_err(|e| format!("Cannot read test binary metadata: {}", e))?;
+            let permissions = metadata.permissions();
+            if permissions.mode() & 0o111 == 0 {
+                return Err(format!("Test binary {} is not executable", test_path.display()));
+            }
+        }
 
-        let output = Command::new(test_path)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .map_err(|e| format!("Failed to execute {}: {}", test_name, e))?;
-
+        // Spawn process with better error handling
+        let mut cmd = Command::new(test_path);
+        cmd.stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+           
+        // Create new process group for cleanup on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+        
+        let mut child = cmd.spawn()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    format!("Test binary {} not found or not executable: {}", test_name, e)
+                } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    format!("Permission denied executing {}: {}", test_name, e)
+                } else {
+                    format!("Failed to spawn {}: {}", test_name, e)
+                }
+            })?;
+        
+        // Set timeout (60 seconds for regular tests, 120 for integration tests)
+        let timeout_secs = if test_name.contains("integration") { 120 } else { 60 };
+        let timeout = Duration::from_secs(timeout_secs);
+        
+        // Simple timeout implementation using try_wait
+        let start = std::time::Instant::now();
+        let output = loop {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    // Process finished, collect output
+                    break child.wait_with_output()
+                        .map_err(|e| format!("Failed to read output: {}", e))?;
+                }
+                Ok(None) => {
+                    // Still running, check timeout
+                    if start.elapsed() > timeout {
+                        // Timeout exceeded, kill the process
+                        #[cfg(unix)]
+                        {
+                            // Kill the entire process group
+                            unsafe {
+                                libc::killpg(child.id() as i32, libc::SIGKILL);
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            child.kill().ok();
+                        }
+                        
+                        return Err(format!(
+                            "❌ TIMEOUT: {} exceeded {} second limit\n\
+                            This test may be deadlocked or in an infinite loop.\n\
+                            Debug with: lldb {}",
+                            test_name, timeout_secs, test_path.display()
+                        ));
+                    }
+                    // Wait a bit before checking again
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    return Err(format!("Failed to wait for child process: {}", e));
+                }
+            }
+        };
+        
+        // Print captured output
         if !output.stdout.is_empty() {
             print!("{}", String::from_utf8_lossy(&output.stdout));
         }
@@ -283,6 +354,64 @@ mod tests {
         }
 
         if !output.status.success() {
+            // Enhanced error diagnostics
+            eprintln!("\n❌ Test {} failed", test_name);
+            eprintln!("═══════════════════════════════════════════");
+            
+            // Check for common signals that indicate crashes
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::ExitStatusExt;
+                if let Some(signal) = output.status.signal() {
+                    let signal_name = match signal {
+                        11 => "SIGSEGV (Segmentation fault)",
+                        6 => "SIGABRT (Abort)",
+                        4 => "SIGILL (Illegal instruction)",
+                        8 => "SIGFPE (Floating point exception)",
+                        5 => "SIGTRAP (Trace/breakpoint trap)",
+                        3 => "SIGQUIT (Quit)",
+                        13 => "SIGPIPE (Broken pipe)",
+                        _ => "Unknown signal",
+                    };
+                    eprintln!("💥 CRASH DETECTED: Signal {} ({})", signal, signal_name);
+                    eprintln!("This is likely a memory access violation or assertion failure.");
+                    eprintln!("");
+                    eprintln!("Debugging steps:");
+                    eprintln!("1. Run directly: {}", test_path.display());
+                    eprintln!("2. Debug with lldb: lldb {}", test_path.display());
+                    eprintln!("3. Check for core dump: ls -la core*");
+                    
+                    // Check for core dump
+                    if let Ok(entries) = std::fs::read_dir(".") {
+                        for entry in entries.flatten() {
+                            if let Some(name) = entry.file_name().to_str() {
+                                if name.starts_with("core") {
+                                    eprintln!("   Core dump found: {}", entry.path().display());
+                                }
+                            }
+                        }
+                    }
+                    
+                    eprintln!("═══════════════════════════════════════════");
+                    return Err(format!("{} CRASHED with {}", test_name, signal_name));
+                }
+            }
+            
+            // Print environment info for debugging
+            eprintln!("Test binary: {}", test_path.display());
+            eprintln!("Working directory: {}", 
+                     std::env::current_dir().unwrap_or_default().display());
+            eprintln!("Exit status: {}", output.status);
+            
+            // Show relevant environment variables
+            eprintln!("\nEnvironment variables:");
+            for (key, value) in std::env::vars() {
+                if key.starts_with("ADA_") || key.starts_with("LLVM_") {
+                    eprintln!("  {}={}", key, value);
+                }
+            }
+            eprintln!("═══════════════════════════════════════════");
+            
             return Err(format!("{} failed with status: {}", test_name, output.status));
         }
 
@@ -307,60 +436,36 @@ mod tests {
     
     #[test]
     fn test_spawn_method() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_spawn_method (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_spawn_method").expect("Spawn method test failed");
     }
     
     #[test]
     #[serial]
     fn test_controller_full_lifecycle() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_controller_full_lifecycle (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_controller_full_lifecycle").expect("Controller full lifecycle test failed");
     }
     
     #[test]
     #[serial]
     fn test_integration() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_integration (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_integration").expect("Integration test failed");
     }
     
     #[test]
     #[serial]
     fn test_agent_loader() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_agent_loader (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_agent_loader").expect("Agent loader test failed");
     }
 
     #[test]
     #[serial]
     fn test_baseline_hooks() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_baseline_hooks (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_baseline_hooks").expect("Baseline hooks test failed");
     }
 
     #[test]
     #[serial]
     fn test_thread_registry() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_thread_registry (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_thread_registry").expect("Thread registry test failed");
     }
     
@@ -372,10 +477,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_thread_registry_integration() {
-        if !integration_tests_enabled() {
-            eprintln!("Skipping test_thread_registry_integration (set ADA_RUN_INTEGRATION_TESTS=1 to run)");
-            return;
-        }
         run_c_test("test_thread_registry_integration").expect("Thread registry integration test failed");
     }
 }

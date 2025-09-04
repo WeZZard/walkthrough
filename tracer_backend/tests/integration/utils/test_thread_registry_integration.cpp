@@ -223,9 +223,34 @@ TEST_F(ThreadRegistryIntegrationTest, integration__multi_thread_registration__th
     
     ASSERT_TRUE(all_ready) << "Not all threads registered in time";
     
+    // Verify all threads got unique slots and are properly registered
+    std::set<uint32_t> unique_slots;
+    std::set<uintptr_t> unique_tids;
+    int valid_lanes_count = 0;
+    
+    for (int i = 0; i < NUM_THREADS; i++) {
+        if (worker_data[i].lanes) {
+            valid_lanes_count++;
+            
+            #ifdef BUILD_TESTING
+            // Check for duplicate slots
+            uint32_t slot = thread_lanes_get_slot_index(worker_data[i].lanes);
+            bool slot_inserted = unique_slots.insert(slot).second;
+            ASSERT_TRUE(slot_inserted) << "Duplicate slot detected: " << slot 
+                                       << " for thread " << i
+                                       << " (total threads: " << NUM_THREADS << ")";
+            #endif
+        }
+    }
+    
+    printf("  Registration stats: %d threads registered successfully\n", valid_lanes_count);
+    #ifdef BUILD_TESTING
+    printf("  Unique slots allocated: %zu\n", unique_slots.size());
+    #endif
+    
     // Verify all threads are visible in registry
     uint32_t registered_count = thread_registry_get_active_count(registry);
-    EXPECT_EQ(registered_count, NUM_THREADS);
+    EXPECT_EQ(registered_count, NUM_THREADS) << "Registry count mismatch";
     
     // With C++ implementation, cannot verify slot assignments directly
     // Just check that all threads got non-null lanes

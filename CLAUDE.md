@@ -151,7 +151,37 @@ When adding C/C++ tests:
 
 Missing step 2 = test won't be accessible via Cargo!
 
+### Test Robustness Features (Updated 2025-01-03)
+
+The C++/Rust test integration in `src/lib.rs` includes:
+- **Crash Detection**: Segfaults/signals clearly reported with debugging steps
+- **Timeout Protection**: 60s for unit tests, 120s for integration tests
+- **Process Groups**: Unix tests run in separate groups for clean termination
+- **Enhanced Diagnostics**: Shows environment, core dumps, debugging commands
+- **Permission Checks**: Verifies test binaries are executable before running
+
+Example error output:
+```
+❌ CRASH DETECTED: test_xyz terminated by signal 11 (SIGSEGV)
+Debugging steps:
+1. Run directly: /path/to/test_xyz
+2. Debug with lldb: lldb /path/to/test_xyz
+3. Check for core dump: ls -la core*
+```
+
 ## Agent-Based Development Workflow
+
+### Automatic Agent Invocation
+
+Claude Code will automatically invoke the appropriate global agents based on context:
+- **Planning tasks** → `@iteration-planner` 
+- **Architecture decisions** → `@architect`
+- **Design reviews** → `@design-reviewer`
+- **Language-specific work** → `@{language}-developer`
+- **Git/PR operations** → `@integration-engineer`
+- **New project setup** → `@project-bootstrapper`
+
+See `.claude/auto-agents.yaml` for trigger configuration.
 
 ### Available Agents
 
@@ -161,6 +191,7 @@ For specific development tasks, use the appropriate specialized agent in `.claud
 
 - `iteration-planner` - Iteration planning with TDD workflow
 - `architect` - System design and technical decisions
+- `design-reviewer` - Reviews designs for maintainability and proposes alternatives
 
 **Language-Specific Development:**
 

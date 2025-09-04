@@ -154,7 +154,7 @@ int main(int argc, char* argv[]) {
             TracerStats stats = frida_controller_get_stats(g_controller);
             printf("[Stats] Events: %llu, Dropped: %llu, Bytes: %llu, Cycles: %llu\n",
                    stats.events_captured, stats.events_dropped,
-                   stats.bytes_written, stats.drain_cycles);
+                   stats.bytes_written, 0ULL /* drain_cycles removed */);
         }
         
         // Check if process is still running
@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
     printf("Events captured: %llu\n", final_stats.events_captured);
     printf("Events dropped:  %llu\n", final_stats.events_dropped);
     printf("Bytes written:   %llu\n", final_stats.bytes_written);
-    printf("Drain cycles:    %llu\n", final_stats.drain_cycles);
+    // printf("Drain cycles:    %llu\n", final_stats.drain_cycles); // Field removed
     
     // Cleanup
     frida_controller_destroy(g_controller);

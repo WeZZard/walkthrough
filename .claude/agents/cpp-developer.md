@@ -170,3 +170,80 @@ STOP if you're:
 - Not documenting memory ordering rationale
 - Placing concrete types in public headers
 - Forgetting `extern "C"` for C++ code
+
+## CROSS-LANGUAGE INTERFACE DESIGN
+
+### When Creating C++ Components
+
+Consider language boundaries BEFORE implementing:
+
+1. **Who will consume this API?**
+   - Pure C++ → Use full C++ features
+   - Mixed C++/Rust → Provide C API wrapper
+   - Rust only → Consider moving component to Rust
+
+2. **What needs to be shared?**
+   - Synchronization primitives → Use plain memory with atomics
+   - Data structures → Prefer opaque handles
+   - Complex types → Provide serialization functions
+
+### FFI Interface Patterns
+
+#### For Rust Consumption
+```cpp
+// ❌ WRONG: Exposing C++ types
+class RingBuffer {
+    std::atomic<uint32_t> write_pos;
+};
+
+// ✅ RIGHT: C wrapper with plain types
+extern "C" {
+    typedef void* RingBufferHandle;
+    uint32_t ring_buffer_read_pos_atomic(RingBufferHandle rb);
+}
+```
+
+#### For Cross-Language Data
+```cpp
+// ❌ WRONG: Shared structure definitions
+struct Event {
+    uint64_t timestamp;
+    // ... duplicated in Rust
+};
+
+// ✅ RIGHT: Serialization interface
+extern "C" {
+    size_t event_serialize(const void* event, uint8_t* buffer);
+    size_t event_deserialize(const uint8_t* buffer, void* event);
+}
+```
+
+### Atomic Operations for Shared Memory
+
+When sharing memory with Rust:
+```cpp
+// Use compiler builtins, not std::atomic
+uint32_t pos = __atomic_load_n(&header->write_pos, __ATOMIC_ACQUIRE);
+__atomic_store_n(&header->read_pos, new_pos, __ATOMIC_RELEASE);
+
+// Document why: Rust can't use std::atomic, but can use atomics on plain memory
+```
+
+### Component Placement Guidelines
+
+**Keep in C++ when:**
+- Direct Frida API usage required
+- Performance-critical hot path
+- Complex pointer manipulation needed
+- Deep system integration required
+
+**Consider moving to Rust when:**
+- Heavy I/O operations
+- File system interaction
+- Network communication
+- High-level orchestration
+
+**Provide C API when:**
+- Rust needs to consume functionality
+- Component stays in C++ but has external users
+- Testing from other languages needed

@@ -346,3 +346,108 @@ STOP if you're:
 - Forgetting to update build.rs test binaries
 - Using `.unwrap()` in library code
 - Not documenting `Send`/`Sync` implementations
+
+## CROSS-LANGUAGE FFI DESIGN
+
+### Core Principles for Rust FFI
+
+1. **Consume, don't duplicate** - Use C headers as source of truth via bindgen
+2. **Atomics on plain memory** - Use `AtomicU32::from_ptr()` on C plain integers
+3. **Opaque handles over structures** - Prefer `*mut c_void` to complex structs
+4. **Rust owns I/O** - File operations, networking belong in Rust
+
+### FFI Patterns
+
+#### Consuming C Ring Buffers
+```rust
+// ❌ WRONG: Duplicating C structures
+#[repr(C)]
+struct IndexEvent {
+    timestamp: u64,
+    function_id: u32,
+    // ... risk of divergence
+}
+
+// ✅ RIGHT: Opaque bytes with C serialization
+extern "C" {
+    fn event_serialize(event: *const c_void, buffer: *mut u8) -> usize;
+}
+
+impl RingBufferConsumer {
+    fn read_next(&mut self) -> Vec<u8> {
+        let mut buffer = vec![0u8; self.event_size];
+        unsafe {
+            ring_buffer_read_raw(self.ptr, buffer.as_mut_ptr(), self.event_size);
+        }
+        buffer
+    }
+}
+```
+
+#### Atomic Operations on Shared Memory
+```rust
+use std::sync::atomic::{AtomicU32, Ordering};
+
+// ✅ RIGHT: Create atomic view of plain C memory
+fn consume_from_ring_buffer(header: *mut RingBufferHeader) {
+    unsafe {
+        // Cast plain u32 to atomic for operations
+        let write_pos = AtomicU32::from_ptr(&mut (*header).write_pos);
+        let read_pos = AtomicU32::from_ptr(&mut (*header).read_pos);
+        
+        let current_read = read_pos.load(Ordering::Acquire);
+        let current_write = write_pos.load(Ordering::Acquire);
+        
+        if current_read != current_write {
+            // Data available
+            read_pos.store(next_pos, Ordering::Release);
+        }
+    }
+}
+```
+
+### Component Placement Decision
+
+**Keep in Rust when:**
+- File I/O and persistence (ATF writer)
+- Process orchestration
+- CLI and user interaction
+- Network communication (MCP server client)
+
+**Call into C++ when:**
+- Need Frida APIs
+- Complex event processing
+- Performance-critical paths
+
+**Interface Design Checklist:**
+- [ ] Can this component move entirely to one language?
+- [ ] What's the minimal data that must cross boundaries?
+- [ ] Are we sharing behavior (functions) not data (structs)?
+- [ ] Can we use serialization instead of shared structures?
+- [ ] Is the maintenance burden acceptable?
+
+### Bindgen Best Practices
+
+```rust
+// build.rs
+bindgen::Builder::default()
+    .header("tracer_backend.h")  // Minimal shared header
+    .allowlist_type("RingBufferHeader")  // Only what's needed
+    .allowlist_function("ring_buffer_.*")  // Specific functions
+    .generate()
+```
+
+### Testing FFI Code
+
+```rust
+#[cfg(test)]
+mod ffi_tests {
+    #[test]
+    fn test_atomic_operations() {
+        let mut value: u32 = 0;
+        let atomic = unsafe { AtomicU32::from_ptr(&mut value) };
+        
+        atomic.store(42, Ordering::Release);
+        assert_eq!(value, 42);  // Verify plain memory updated
+    }
+}

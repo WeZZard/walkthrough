@@ -142,6 +142,8 @@ fn main() {
     let binaries = vec![
         ("bin/tracer_poc", "bin/tracer_poc"),
         ("out/bin/tracer_poc", "bin/tracer_poc"),
+        ("build/bin/test_cli", "test/test_cli"),
+        ("build/bin/test_runloop", "test/test_runloop"),
         ("bin/test_cli", "test/test_cli"),
         ("bin/test_runloop", "test/test_runloop"),
         // Google Test executables (multiple possible source locations)

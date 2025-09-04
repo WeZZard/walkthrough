@@ -17,7 +17,7 @@ endif()
 
 # Controller library
 add_library(tracer_controller STATIC
-    frida_controller.c
+    frida_controller.cpp
 )
 
 set_target_properties(tracer_controller PROPERTIES

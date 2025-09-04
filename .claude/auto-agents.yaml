@@ -1,0 +1,91 @@
+# Auto-Agent Configuration
+# Automatically invoke agents based on context and keywords
+
+auto_triggers:
+  # Planning & Architecture
+  - trigger:
+      keywords: ["plan", "design", "architect", "structure", "milestone", "epic", "iteration"]
+      file_patterns: ["**/docs/progress_trackings/**", "**/DESIGN.md", "**/ARCHITECTURE.md"]
+      agent: iteration-planner
+      confidence: 0.8
+  
+  - trigger:
+      keywords: ["review design", "maintenance", "complexity", "alternative", "trade-off"]
+      file_patterns: ["**/design/**", "**/architecture/**", "**/ADR-*.md"]
+      agent: design-reviewer
+      confidence: 0.9
+  
+  - trigger:
+      keywords: ["system design", "component", "interface", "cross-language", "FFI"]
+      file_patterns: ["**/specs/**", "**/architecture/**"]
+      agent: architect
+      confidence: 0.85
+
+  # Development
+  - trigger:
+      keywords: ["rust", "cargo", "trait", "impl", "unsafe", "lifetime"]
+      file_patterns: ["**/*.rs", "**/Cargo.toml"]
+      agent: rust-developer
+      confidence: 0.95
+  
+  - trigger:
+      keywords: ["python", "type hint", "async", "pytest", "pip"]
+      file_patterns: ["**/*.py", "**/pyproject.toml", "**/requirements.txt"]
+      agent: python-developer
+      confidence: 0.95
+  
+  - trigger:
+      keywords: ["c++", "cmake", "template", "std::", "nullptr"]
+      file_patterns: ["**/*.cpp", "**/*.cc", "**/*.h", "**/CMakeLists.txt"]
+      agent: cpp-developer
+      confidence: 0.95
+
+  # Integration & Quality
+  - trigger:
+      keywords: ["commit", "pull request", "PR", "merge", "quality gate", "coverage"]
+      file_patterns: ["**/.git/**", "**/.github/**"]
+      agent: integration-engineer
+      confidence: 0.9
+  
+  # Project Setup
+  - trigger:
+      keywords: ["new project", "scaffold", "bootstrap", "initialize", "setup project"]
+      file_patterns: ["**/README.md", "**/package.json", "**/Cargo.toml"]
+      agent: project-bootstrapper
+      confidence: 0.85
+
+# Workflow sequences - automatically chain agents
+workflows:
+  tdd_cycle:
+    description: "Complete TDD development cycle"
+    steps:
+      - agent: iteration-planner
+        duration: 0.5  # Agent hours
+      - agent: architect
+        duration: 1.0
+      - agent: "{language}-developer"  # Dynamic based on file type
+        duration: 2.0
+      - agent: integration-engineer
+        duration: 0.5
+  
+  design_review_cycle:
+    description: "Design and review cycle"
+    steps:
+      - agent: architect
+        duration: 1.0
+      - agent: design-reviewer
+        duration: 0.5
+        
+  project_init:
+    description: "Initialize new project"
+    steps:
+      - agent: project-bootstrapper
+        duration: 2.0
+      - agent: iteration-planner
+        duration: 0.5
+
+# Agent hour tracking
+tracking:
+  log_file: ".claude/agent_hours.log"
+  report_frequency: "weekly"
+  velocity_calculation: true

@@ -43,8 +43,8 @@ public:
         header_->version = RING_BUFFER_VERSION;
         header_->capacity = buffer_size_ / event_size;
         // Use C11 atomic operations on _Atomic members
-        atomic_store_explicit(&header_->write_pos, 0, memory_order_relaxed);
-        atomic_store_explicit(&header_->read_pos, 0, memory_order_relaxed);
+        __atomic_store_n(&header_->write_pos, 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&header_->read_pos, 0, __ATOMIC_RELAXED);
         
         return true;
     }
@@ -72,9 +72,9 @@ public:
     bool write(const void* event) {
         if (!event) return false;
         
-        uint32_t write_pos = atomic_load_explicit(&header_->write_pos, memory_order_acquire);
+        uint32_t write_pos = __atomic_load_n(&header_->write_pos, __ATOMIC_ACQUIRE);
         uint32_t next_pos = (write_pos + 1) % header_->capacity;
-        uint32_t read_pos = atomic_load_explicit(&header_->read_pos, memory_order_acquire);
+        uint32_t read_pos = __atomic_load_n(&header_->read_pos, __ATOMIC_ACQUIRE);
         
         // Check if full
         if (next_pos == read_pos) {
@@ -86,14 +86,14 @@ public:
         std::memcpy(dest, event, event_size_);
         
         // Update write position
-        atomic_store_explicit(&header_->write_pos, next_pos, memory_order_release);
+        __atomic_store_n(&header_->write_pos, next_pos, __ATOMIC_RELEASE);
         
         return true;
     }
     
     size_t available_write() {
-        uint32_t write_pos = atomic_load_explicit(&header_->write_pos, memory_order_acquire);
-        uint32_t read_pos = atomic_load_explicit(&header_->read_pos, memory_order_acquire);
+        uint32_t write_pos = __atomic_load_n(&header_->write_pos, __ATOMIC_ACQUIRE);
+        uint32_t read_pos = __atomic_load_n(&header_->read_pos, __ATOMIC_ACQUIRE);
         
         if (write_pos >= read_pos) {
             return header_->capacity - (write_pos - read_pos) - 1;
@@ -106,8 +106,8 @@ public:
     bool read(void* event) {
         if (!event) return false;
         
-        uint32_t read_pos = atomic_load_explicit(&header_->read_pos, memory_order_acquire);
-        uint32_t write_pos = atomic_load_explicit(&header_->write_pos, memory_order_acquire);
+        uint32_t read_pos = __atomic_load_n(&header_->read_pos, __ATOMIC_ACQUIRE);
+        uint32_t write_pos = __atomic_load_n(&header_->write_pos, __ATOMIC_ACQUIRE);
         
         // Check if empty
         if (read_pos == write_pos) {
@@ -120,7 +120,7 @@ public:
         
         // Update read position
         uint32_t next_pos = (read_pos + 1) % header_->capacity;
-        atomic_store_explicit(&header_->read_pos, next_pos, memory_order_release);
+        __atomic_store_n(&header_->read_pos, next_pos, __ATOMIC_RELEASE);
         
         return true;
     }
@@ -142,8 +142,8 @@ public:
     }
     
     size_t available_read() {
-        uint32_t write_pos = atomic_load_explicit(&header_->write_pos, memory_order_acquire);
-        uint32_t read_pos = atomic_load_explicit(&header_->read_pos, memory_order_acquire);
+        uint32_t write_pos = __atomic_load_n(&header_->write_pos, __ATOMIC_ACQUIRE);
+        uint32_t read_pos = __atomic_load_n(&header_->read_pos, __ATOMIC_ACQUIRE);
         
         if (write_pos >= read_pos) {
             return write_pos - read_pos;
@@ -154,23 +154,23 @@ public:
     
     // Status operations
     bool is_empty() {
-        uint32_t write_pos = atomic_load_explicit(&header_->write_pos, memory_order_acquire);
-        uint32_t read_pos = atomic_load_explicit(&header_->read_pos, memory_order_acquire);
+        uint32_t write_pos = __atomic_load_n(&header_->write_pos, __ATOMIC_ACQUIRE);
+        uint32_t read_pos = __atomic_load_n(&header_->read_pos, __ATOMIC_ACQUIRE);
         
         return write_pos == read_pos;
     }
     
     bool is_full() {
-        uint32_t write_pos = atomic_load_explicit(&header_->write_pos, memory_order_acquire);
-        uint32_t read_pos = atomic_load_explicit(&header_->read_pos, memory_order_acquire);
+        uint32_t write_pos = __atomic_load_n(&header_->write_pos, __ATOMIC_ACQUIRE);
+        uint32_t read_pos = __atomic_load_n(&header_->read_pos, __ATOMIC_ACQUIRE);
         
         uint32_t next_pos = (write_pos + 1) % header_->capacity;
         return next_pos == read_pos;
     }
     
     void reset() {
-        atomic_store_explicit(&header_->write_pos, 0, memory_order_release);
-        atomic_store_explicit(&header_->read_pos, 0, memory_order_release);
+        __atomic_store_n(&header_->write_pos, 0, __ATOMIC_RELEASE);
+        __atomic_store_n(&header_->read_pos, 0, __ATOMIC_RELEASE);
     }
     
     // Accessors for internal state

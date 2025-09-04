@@ -67,15 +67,20 @@ typedef struct __attribute__((packed)) {
     uint8_t _padding[512 - 248];
 } DetailEvent;
 
-// Ring buffer header
+// Ring buffer header - uses plain memory for cross-language atomics
+// IMPORTANT: Access write_pos/read_pos with atomic operations, NOT directly!
+// See docs/technical_insights/ada/ATOMIC_OPERATIONS_CROSS_LANGUAGE.md
+#ifndef RING_BUFFER_HEADER_DEFINED
+#define RING_BUFFER_HEADER_DEFINED
 typedef struct {
     uint32_t magic;         // 0xADA0
     uint32_t version;       // Format version
     uint32_t capacity;      // Number of events
-    _Atomic uint32_t write_pos;     // Write position (atomic)
-    _Atomic uint32_t read_pos;      // Read position (atomic)
+    uint32_t write_pos;     // Write position (use atomic ops!)
+    uint32_t read_pos;      // Read position (use atomic ops!)
     uint32_t _reserved[11]; // Reserved for future use
 } RingBufferHeader;
+#endif
 
 // Thread info for registry
 typedef struct {
@@ -100,14 +105,16 @@ typedef struct {
 } ControlBlock;
 
 // Statistics
+#ifndef TRACER_STATS_DEFINED
+#define TRACER_STATS_DEFINED
 typedef struct {
     uint64_t events_captured;
     uint64_t events_dropped;
     uint64_t bytes_written;
-    uint64_t drain_cycles;
-    double cpu_overhead_percent;
-    double memory_usage_mb;
+    uint32_t active_threads;
+    uint32_t hooks_installed;
 } TracerStats;
+#endif
 
 // ============================================================================
 // Thread Registry - Opaque types for public API

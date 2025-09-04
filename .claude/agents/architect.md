@@ -212,3 +212,94 @@ STOP if you're:
 - Ignoring platform differences
 - Adding unnecessary dependencies
 - Creating untestable architectures
+
+## CROSS-LANGUAGE BOUNDARY DESIGN
+
+### Core Principles
+
+1. **Share memory, not types** - Use plain memory with atomic operations
+2. **Share behavior, not data** - Expose functions, hide structures
+3. **Minimize shared surface** - Only share what's absolutely necessary
+4. **Stable vs Unstable** - Separate unchanging parts from evolving parts
+
+### Language Boundary Checklist
+
+Before creating FFI interfaces, ask:
+
+- [ ] **Is this boundary necessary?** Could the component live entirely in one language?
+- [ ] **What's the minimal interface?** What's the absolute minimum that must be shared?
+- [ ] **Can we use opaque pointers?** Hide implementation details behind handles
+- [ ] **Where does the code naturally belong?** Use each language's strengths
+- [ ] **What's the maintenance burden?** How many places need updates when formats change?
+
+### Language Selection Guidelines
+
+**Use C++ for:**
+- Low-level system interaction (Frida hooks)
+- Performance-critical hot paths
+- Direct memory manipulation
+- Components that need full event structure access
+
+**Use Rust for:**
+- File I/O and persistence
+- Process orchestration
+- Network communication
+- High-level control flow
+- Safety-critical coordination
+
+**Use Python for:**
+- Data analysis and querying
+- User interfaces
+- Rapid prototyping
+- ML/AI integration
+
+### FFI Design Patterns
+
+#### ❌ WRONG: Sharing complex structures
+```c
+// Duplicated in both C++ and Rust - maintenance nightmare
+typedef struct {
+    uint64_t timestamp;
+    uint32_t function_id;
+    // ... 20 more fields
+} IndexEvent;
+```
+
+#### ✅ RIGHT: Opaque handles with functions
+```c
+// C++ owns the structure
+typedef void* EventHandle;
+size_t event_get_size(EventHandle evt);
+void event_serialize(EventHandle evt, uint8_t* buffer);
+```
+
+#### ✅ RIGHT: Minimal shared headers
+```c
+// Only share synchronization primitives
+typedef struct {
+    uint32_t write_pos;  // Accessed atomically
+    uint32_t read_pos;   // Accessed atomically
+    uint32_t capacity;
+} RingBufferHeader;
+```
+
+### Architecture Decision Framework
+
+When designing cross-language components:
+
+1. **State the problem clearly** - What needs to be shared and why?
+2. **List ALL constraints** - Technical, maintenance, performance
+3. **Generate multiple solutions** - Minimum 3 different approaches
+4. **Evaluate long-term costs** - Maintenance burden over 5 years
+5. **Choose sustainability** - Prefer maintainable over clever
+6. **Document alternatives** - Why were other approaches rejected?
+
+### Maintenance Burden Analysis
+
+For each design, consider:
+
+- **Synchronization cost**: How many files need updates for a format change?
+- **Version skew risk**: Can components have mismatched versions?
+- **Debugging difficulty**: How hard is it to diagnose issues?
+- **Evolution friction**: How easily can we add new features?
+- **Testing complexity**: Can we test components independently?

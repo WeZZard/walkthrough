@@ -23,10 +23,36 @@ include(GoogleTest)
 # Common test main
 add_library(test_main STATIC test_main.cpp)
 target_link_libraries(test_main PUBLIC GTest::gtest GTest::gmock)
+target_compile_definitions(test_main PUBLIC BUILD_TESTING=1)
 target_include_directories(test_main 
     PRIVATE 
         ${CMAKE_BINARY_DIR}  # For ada_paths.h
 )
+
+# ===========================================
+# Test Fixtures - Helper programs for integration tests
+# ===========================================
+
+# test_cli - Simple CLI program for tracing tests
+add_executable(test_cli fixtures/test_cli.c)
+target_link_libraries(test_cli PRIVATE m)
+# Place in bin/ directory as build.rs expects
+set_target_properties(test_cli PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# test_runloop - RunLoop-based program for macOS-specific tests
+if(APPLE)
+    add_executable(test_runloop fixtures/test_runloop.c)
+    target_link_libraries(test_runloop PRIVATE 
+        m
+        "-framework CoreFoundation"
+    )
+    # Place in bin/ directory as build.rs expects
+    set_target_properties(test_runloop PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+endif()
 
 # ===========================================
 # Add Test Subdirectories

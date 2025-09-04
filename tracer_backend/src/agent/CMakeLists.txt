@@ -17,7 +17,7 @@ endif()
 
 # Agent shared library
 add_library(frida_agent SHARED
-    frida_agent.c
+    frida_agent.cpp
 )
 
 target_include_directories(frida_agent
@@ -59,4 +59,7 @@ endif()
 set_target_properties(frida_agent PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
     POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
 )
