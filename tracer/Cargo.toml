@@ -1,0 +1,33 @@
+[package]
+name = "ada-tracer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+byteorder = "1.5"
+memmap2 = "0.9"
+crossbeam = "0.8"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3.8"
+criterion = "0.5"
+proptest = "1.4"
+
+[lib]
+name = "ada_tracer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ada-trace"
+path = "src/main.rs"
+required-features = []
+
+[features]
+default = []
+benchmarks = []

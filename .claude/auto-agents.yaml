@@ -2,6 +2,13 @@
 # Automatically invoke agents based on context and keywords
 
 auto_triggers:
+  # Interface Enforcement - HIGHEST PRIORITY
+  - trigger:
+      keywords: ["interface", "contract", "trait", "protocol", "virtual", "API design"]
+      file_patterns: ["**/interfaces/**", "**/protocols/**", "**/traits/**", "**/*.h"]
+      agent: interface-enforcer
+      confidence: 0.95
+      priority: 1
   # Planning & Architecture
   - trigger:
       keywords: ["plan", "design", "architect", "structure", "milestone", "epic", "iteration"]
@@ -40,6 +47,28 @@ auto_triggers:
       agent: cpp-developer
       confidence: 0.95
 
+  # Language-Specific Integrators (Failure Analysis)
+  - trigger:
+      keywords: ["error[E", "cannot borrow", "lifetime", "trait bound", "cargo test failed"]
+      file_patterns: ["**/*.rs", "**/Cargo.toml"]
+      agent: rust-integrator
+      confidence: 0.95
+      priority: 2
+  
+  - trigger:
+      keywords: ["TypeError", "AttributeError", "Protocol violation", "mypy error", "pytest failed"]
+      file_patterns: ["**/*.py", "**/pyproject.toml"]
+      agent: python-integrator
+      confidence: 0.95
+      priority: 2
+  
+  - trigger:
+      keywords: ["segmentation fault", "undefined reference", "pure virtual", "template error", "cmake error"]
+      file_patterns: ["**/*.cpp", "**/*.cc", "**/*.h", "**/CMakeLists.txt"]
+      agent: cpp-integrator
+      confidence: 0.95
+      priority: 2
+  
   # Integration & Quality
   - trigger:
       keywords: ["commit", "pull request", "PR", "merge", "quality gate", "coverage"]
@@ -54,8 +83,46 @@ auto_triggers:
       agent: project-bootstrapper
       confidence: 0.85
 
+# Failure Analysis Workflow - NEW
+failure_analysis_triggers:
+  build_failure:
+    patterns: ["compilation failed", "build error", "linking failed"]
+    workflow:
+      - agent: interface-enforcer
+        check: "Validate interface compiles"
+      - agent: "{language}-integrator"
+        check: "Analyze failure root cause"
+      - agent: "{language}-developer"
+        action: "Fix based on analysis"
+  
+  test_failure:
+    patterns: ["test failed", "assertion failed", "FAIL:"]
+    workflow:
+      - agent: interface-enforcer
+        check: "Verify test uses correct interface"
+      - agent: "{language}-integrator"
+        check: "Determine if test or impl issue"
+      - agent: "{language}-developer or {language}-tester"
+        action: "Fix identified component"
+
 # Workflow sequences - automatically chain agents
 workflows:
+  interface_driven_development:
+    description: "Interface-first TDD cycle with enforcement"
+    steps:
+      - agent: architect
+        duration: 0.5
+        output: "Compilable interfaces"
+      - agent: interface-enforcer
+        duration: 0.1
+        check: "Validate interfaces compile"
+      - agent: "{language}-developer"
+        duration: 2.0
+        constraint: "Must implement exact interface"
+      - agent: "{language}-integrator"
+        duration: 0.25
+        check: "Verify compliance and analyze failures"
+  
   tdd_cycle:
     description: "Complete TDD development cycle"
     steps:

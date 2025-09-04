@@ -169,17 +169,73 @@ Debugging steps:
 3. Check for core dump: ls -la core*
 ```
 
-## Agent-Based Development Workflow
+## Interface-Driven Development Workflow
+
+### Interface Compilation as Gate 0
+
+**MANDATORY**: All interfaces must compile before implementation begins.
+
+1. **Define Interfaces First**
+   - Complete, compilable interface definitions in:
+     - `tracer_backend/include/tracer_backend/interfaces/` (C/C++)
+     - `tracer/src/lib.rs` (Rust traits)
+     - `query_engine/src/interfaces.py` (Python protocols)
+     - `mcp_server/src/interfaces.py` (Python protocols)
+
+2. **Skeleton Implementations**
+   - Minimal skeletons that compile and link:
+     - Return appropriate error values
+     - Allow early integration testing
+     - Located in `src/interfaces/` for validation
+
+3. **Triple-Check Protocol for ADA**
+   - **Check 1**: Interfaces compile in isolation
+   - **Check 2**: Skeletons link with test harness
+   - **Check 3**: Cross-language FFI boundaries validate
+
+4. **Performance Contracts in Interfaces**
+   - `<1μs` registration latency (enforced by benchmark)
+   - `<10ns` fast path access (TLS)
+   - Documented in interface headers as constants
+
+### Cross-Language Interface Rules
+
+1. **C++ ↔ Rust**: Opaque handles with C API
+   - C++ owns concrete types
+   - Rust sees only opaque pointers
+   - Shared memory with atomic operations
+
+2. **Rust ↔ Python**: PyO3 bindings
+   - Rust controls lifecycle
+   - Python gets safe wrappers
+
+3. **Shared Memory**: Plain memory with atomics
+   - No complex types across boundaries
+   - Atomic operations for synchronization
+   - Cache-line aligned for performance
+
+## Interface-Driven Development Workflow (MANDATORY)
+
+### Core Principle: Interfaces Compile First
+**No implementation work begins until interfaces compile successfully.**
+
+### Triple-Check Protocol for ADA
+When failures occur, agents automatically perform:
+1. **Interface Check** → Verify C API/Rust traits/Python Protocols compile
+2. **Implementation Check** → Validate against interface contracts
+3. **Test Check** → Ensure tests use interfaces correctly
 
 ### Automatic Agent Invocation
 
 Claude Code will automatically invoke the appropriate global agents based on context:
+- **Interface issues** → `@interface-enforcer` (highest priority)
+- **Build/test failures** → `@{language}-integrator` → root cause analysis
 - **Planning tasks** → `@iteration-planner` 
-- **Architecture decisions** → `@architect`
+- **Architecture decisions** → `@architect` (must provide compilable interfaces)
 - **Design reviews** → `@design-reviewer`
 - **Language-specific work** → `@{language}-developer`
 - **Git/PR operations** → `@integration-engineer`
-- **New project setup** → `@project-bootstrapper`
+- **Cross-language issues** → See `.claude/ada-integrator.yaml`
 
 See `.claude/auto-agents.yaml` for trigger configuration.
 

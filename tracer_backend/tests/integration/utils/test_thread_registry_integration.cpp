@@ -557,13 +557,14 @@ TEST_F(ThreadRegistryIntegrationTest, integration__drain_iterator__then_sees_all
         lanes_list.push_back(lanes);
         
         // Each thread submits unique pattern
+        Lane* index_lane = thread_lanes_get_index_lane(lanes);
         for (uint32_t j = 0; j < 10; j++) {
-            lane_submit_ring(&lanes->index_lane, i * 1000 + j);
+            lane_submit_ring(index_lane, i * 1000 + j);
         }
         
         // Mark some as inactive
         if (i % 3 == 0) {
-            atomic_store(&lanes->active, false);
+            thread_lanes_set_active(lanes, false);
         }
     }
     
@@ -581,8 +582,9 @@ TEST_F(ThreadRegistryIntegrationTest, integration__drain_iterator__then_sees_all
             active_slots.insert(i);
             
             // Drain all events
+            Lane* index_lane = thread_lanes_get_index_lane(lanes);
             uint32_t ring_idx;
-            while ((ring_idx = lane_take_ring(&lanes->index_lane)) != UINT32_MAX) {
+            while ((ring_idx = lane_take_ring(index_lane)) != UINT32_MAX) {
                 seen_values.insert(ring_idx);
             }
         }
@@ -634,9 +636,10 @@ TEST_F(ThreadRegistryIntegrationTest, integration__high_frequency_events__then_h
                           if (!worker->lanes) return nullptr;
                           
                           // Blast events as fast as possible
+                          Lane* index_lane = thread_lanes_get_index_lane(worker->lanes);
                           uint32_t value = 0;
                           while (worker->should_run->load()) {
-                              if (lane_submit_ring(&worker->lanes->index_lane, value++)) {
+                              if (lane_submit_ring(index_lane, value++)) {
                                   worker->events_sent++;
                               } else {
                                   worker->events_dropped++;
@@ -706,10 +709,11 @@ TEST_F(ThreadRegistryIntegrationTest, integration__cross_thread_visibility__then
                       auto* phase2 = std::get<2>(*data);
                       
                       // Phase 1: Write initial data
+                      Lane* index_lane = thread_lanes_get_index_lane(lanes);
                       for (uint32_t i = 0; i < 50; i++) {
-                          lane_submit_ring(&lanes->index_lane, i);
+                          lane_submit_ring(index_lane, i);
                       }
-                      atomic_store(&lanes->events_generated, 50);
+                      thread_lanes_set_events_generated(lanes, 50);
                       phase1->store(true, std::memory_order_release);
                       
                       // Wait a bit
@@ -717,9 +721,9 @@ TEST_F(ThreadRegistryIntegrationTest, integration__cross_thread_visibility__then
                       
                       // Phase 2: Write more data
                       for (uint32_t i = 50; i < 100; i++) {
-                          lane_submit_ring(&lanes->index_lane, i);
+                          lane_submit_ring(index_lane, i);
                       }
-                      atomic_store(&lanes->events_generated, 100);
+                      thread_lanes_set_events_generated(lanes, 100);
                       phase2->store(true, std::memory_order_release);
                       
                       delete data;
@@ -747,16 +751,17 @@ TEST_F(ThreadRegistryIntegrationTest, integration__cross_thread_visibility__then
                       }
                       
                       // Check phase 1 state
-                      uint64_t events1 = atomic_load(&lanes->events_generated);
+                      uint64_t events1 = thread_lanes_get_events_generated(lanes);
                       if (events1 < 50) {
                           printf("Phase 1 visibility issue: events=%lu\n", events1);
                           passed->store(false);
                       }
                       
                       // Count phase 1 queue items
+                      Lane* index_lane = thread_lanes_get_index_lane(lanes);
                       uint32_t count1 = 0;
                       uint32_t ring_idx;
-                      while ((ring_idx = lane_take_ring(&lanes->index_lane)) != UINT32_MAX) {
+                      while ((ring_idx = lane_take_ring(index_lane)) != UINT32_MAX) {
                           count1++;
                           if (count1 >= 50) break;
                       }
@@ -767,7 +772,7 @@ TEST_F(ThreadRegistryIntegrationTest, integration__cross_thread_visibility__then
                       }
                       
                       // Check phase 2 state
-                      uint64_t events2 = atomic_load(&lanes->events_generated);
+                      uint64_t events2 = thread_lanes_get_events_generated(lanes);
                       if (events2 < 100) {
                           printf("Phase 2 visibility issue: events=%lu\n", events2);
                           passed->store(false);
@@ -775,7 +780,7 @@ TEST_F(ThreadRegistryIntegrationTest, integration__cross_thread_visibility__then
                       
                       // Count remaining items
                       uint32_t count2 = 0;
-                      while ((ring_idx = lane_take_ring(&lanes->index_lane)) != UINT32_MAX) {
+                      while ((ring_idx = lane_take_ring(index_lane)) != UINT32_MAX) {
                           count2++;
                       }
                       

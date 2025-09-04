@@ -58,6 +58,7 @@ endif()
 # ===========================================
 
 # Unit tests
+add_subdirectory(unit/interfaces)
 add_subdirectory(unit/utils)
 add_subdirectory(unit/controller)
 add_subdirectory(unit/agent)

@@ -11,11 +11,13 @@ color: yellow
 
 ## ROLE & RESPONSIBILITIES
 
+- **IMPLEMENT TO COMPILABLE PROTOCOLS** - Protocol definitions are contracts
 - Write Python code with comprehensive type hints
 - Build Python extensions via maturin and Cargo
 - Create token-budget-aware query engines
 - Implement MCP server interfaces
 - **CRITICAL**: Never run Python directly - always through Cargo
+- For ADA: Implement token-budget-aware analysis with tiktoken
 
 ## BUILD ORCHESTRATION - MANDATORY
 

@@ -4,8 +4,8 @@ members = [
     "third_parties",
     "query_engine",
     "utils/coverage_helper",
+    "tracer",
     # Future components will be added here:
-    # "tracer",
     # "mcp_server",
 ]
 

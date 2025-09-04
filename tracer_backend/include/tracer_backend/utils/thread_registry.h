@@ -123,6 +123,21 @@ ThreadLaneSet* thread_registry_get_thread_at(ThreadRegistry* registry, uint32_t 
 Lane* thread_lanes_get_index_lane(ThreadLaneSet* lanes);
 Lane* thread_lanes_get_detail_lane(ThreadLaneSet* lanes);
 
+// Set active status for a thread lane set
+// lanes: ThreadLaneSet pointer
+// active: true if active, false if inactive
+void thread_lanes_set_active(ThreadLaneSet* lanes, bool active);
+
+// Set events generated counter for a thread lane set  
+// lanes: ThreadLaneSet pointer
+// count: number of events generated
+void thread_lanes_set_events_generated(ThreadLaneSet* lanes, uint64_t count);
+
+// Get events generated counter for a thread lane set
+// lanes: ThreadLaneSet pointer
+// Returns: number of events generated
+uint64_t thread_lanes_get_events_generated(ThreadLaneSet* lanes);
+
 
 // Thread-local pointer for fast lane access
 extern __thread ThreadLaneSet* tls_my_lanes;

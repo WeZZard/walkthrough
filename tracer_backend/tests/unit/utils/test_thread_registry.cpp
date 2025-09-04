@@ -1,3 +1,4 @@
+#include "gtest/gtest.h"
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>
@@ -384,19 +385,8 @@ TEST_F(ThreadRegistryTest, isolation__no_false_sharing__then_independent_perform
     printf("  ThreadLaneSet size: %zu bytes (cache line = 64 bytes)\n", sizeof(ThreadLaneSet));
     printf("  ThreadLaneSet alignment: %zu bytes\n", alignof(ThreadLaneSet));
     if (sizeof(ThreadLaneSet) % 64 != 0) {
-        printf("  WARNING: ThreadLaneSet not cache-line sized, may cause false sharing\n");
+        GTEST_FATAL_FAILURE_("ThreadLaneSet not cache-line sized, may cause false sharing");
     }
-    
-    // Check system load before running performance test
-    #ifdef __APPLE__
-    double load[3];
-    if (getloadavg(load, 3) != -1) {
-        if (load[0] > 3.0) {
-            GTEST_SKIP() << "System load too high (" << load[0] << "), skipping performance test";
-        }
-        printf("  System load: %.2f (proceeding with test)\n", load[0]);
-    }
-    #endif
     
     const int num_threads = 4;
     const int iterations = 100000;

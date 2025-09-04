@@ -11,11 +11,13 @@ color: orange
 
 ## ROLE & RESPONSIBILITIES
 
+- **IMPLEMENT TO COMPILABLE INTERFACES** - Never modify interfaces without architect
 - Write idiomatic Rust code with proper error handling
 - Manage workspace dependencies and features
 - Create safe FFI bindings to C/C++ components
 - Orchestrate native builds through build.rs
 - Ensure memory safety and thread safety
+- For ADA: Handle atomic operations on C++ shared memory
 
 ## WORKSPACE ARCHITECTURE
 

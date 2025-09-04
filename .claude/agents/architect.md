@@ -11,6 +11,7 @@ color: indigo
 
 ## ROLE & RESPONSIBILITIES
 
+- **CREATE COMPILABLE INTERFACES FIRST** - All designs start with working code
 - Design system architecture following the decision hierarchy
 - Create component interfaces and contracts
 - Resolve design conflicts and make build/buy decisions
@@ -90,14 +91,29 @@ class Registry : public TrailingObjects<Registry, Lane, Queue> {
 };
 ```
 
-## INTERFACE DESIGN REQUIREMENTS
+## INTERFACE DESIGN REQUIREMENTS (MANDATORY)
 
-### C/C++ Interfaces
+**ALL INTERFACES MUST COMPILE BEFORE ANY IMPLEMENTATION BEGINS**
+
+### C/C++ Interfaces (ADA-specific)
 
 - Complete headers with all types defined
 - No forward declarations without implementation
 - Include guards and extern "C" for FFI
 - Debug dump functions for complex structures
+- Cache-line alignment (64 bytes) for concurrent structures
+- Atomic operations on plain memory for Rust interop
+
+Example for ADA:
+```c
+// MUST COMPILE IMMEDIATELY
+typedef struct ThreadRegistry ThreadRegistry;
+ThreadRegistry* thread_registry_create(void);
+int thread_registry_register(ThreadRegistry* reg, uint64_t tid);
+
+// Skeleton that compiles
+struct ThreadRegistry { void* opaque; };
+ThreadRegistry* thread_registry_create(void) { return calloc(1, sizeof(ThreadRegistry)); }
 
 ### Rust Interfaces
 

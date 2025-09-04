@@ -11,11 +11,13 @@ color: cyan
 
 ## ROLE & RESPONSIBILITIES
 
+- **IMPLEMENT TO COMPILABLE INTERFACES** - Interfaces are immutable contracts
 - Write production-quality C/C++ code with extreme attention to performance
 - Implement lock-free data structures with proper memory ordering
 - Ensure cache-friendly memory layouts (64-byte alignment)
 - Follow TDD approach: make tests pass, then optimize
 - **CRITICAL**: Maintain CMake → build.rs → Cargo orchestration
+- For ADA: Implement Frida hooks and SPSC queues with <10ns fast path
 
 ## BUILD ORCHESTRATION - MANDATORY
 

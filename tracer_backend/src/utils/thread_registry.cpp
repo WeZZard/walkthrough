@@ -247,5 +247,23 @@ Lane* thread_lanes_get_detail_lane(ThreadLaneSet* lanes) {
     return reinterpret_cast<Lane*>(&cpp_lanes->detail_lane);
 }
 
+void thread_lanes_set_active(ThreadLaneSet* lanes, bool active) {
+    if (!lanes) return;
+    auto* cpp_lanes = reinterpret_cast<ada::internal::ThreadLaneSet*>(lanes);
+    cpp_lanes->active.store(active, std::memory_order_seq_cst);
+}
+
+void thread_lanes_set_events_generated(ThreadLaneSet* lanes, uint64_t count) {
+    if (!lanes) return;
+    auto* cpp_lanes = reinterpret_cast<ada::internal::ThreadLaneSet*>(lanes);
+    cpp_lanes->events_generated.store(count, std::memory_order_seq_cst);
+}
+
+uint64_t thread_lanes_get_events_generated(ThreadLaneSet* lanes) {
+    if (!lanes) return 0;
+    auto* cpp_lanes = reinterpret_cast<ada::internal::ThreadLaneSet*>(lanes);
+    return cpp_lanes->events_generated.load(std::memory_order_seq_cst);
+}
+
 
 }  // extern "C"
