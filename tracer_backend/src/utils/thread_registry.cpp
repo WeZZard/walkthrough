@@ -15,6 +15,9 @@ thread_local ThreadLaneSet* tls_current_lanes = nullptr;
 }  // namespace internal
 }  // namespace ada
 
+// Define optional logging flag with C++ linkage
+bool needs_log_thread_registry_registry = false;
+
 // =============================================================================
 // C Compatibility Layer - Wraps C++ implementation for C interface
 // =============================================================================
@@ -37,6 +40,15 @@ ThreadRegistry* thread_registry_init(void* memory, size_t size) {
 
 ThreadRegistry* thread_registry_init_with_capacity(void* memory, size_t size, uint32_t capacity) {
     auto* impl = ada::internal::ThreadRegistry::create(memory, size, capacity);
+    return reinterpret_cast<ThreadRegistry*>(impl);
+}
+
+ThreadRegistry* thread_registry_attach(void* memory) {
+    if (!memory) return nullptr;
+    auto* impl = reinterpret_cast<ada::internal::ThreadRegistry*>(memory);
+    if (!impl->validate()) {
+        return nullptr;
+    }
     return reinterpret_cast<ThreadRegistry*>(impl);
 }
 
@@ -91,8 +103,12 @@ void thread_registry_unregister(ThreadLaneSet* lanes) {
 
 struct RingBuffer* lane_get_active_ring(Lane* lane) {
     if (!lane) return nullptr;
-    uint32_t idx = atomic_load_explicit(&lane->active_idx, memory_order_relaxed);
-    return lane->rings[idx];
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
+    auto idx = cpp_lane->active_idx.load(std::memory_order_relaxed);
+    auto* layout = cpp_lane->memory_layout;
+    if (!layout) return nullptr;
+    if (idx >= cpp_lane->ring_count) return nullptr;
+    return layout->rb_handles[idx];
 }
 
 bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread_id) {
@@ -176,13 +192,13 @@ bool lane_submit_ring(Lane* lane, uint32_t ring_idx) {
     // Treat submit queue as a generic SPSC queue for integration tests
     auto head = cpp_lane->submit_head.load(std::memory_order_relaxed);
     auto tail = cpp_lane->submit_tail.load(std::memory_order_acquire);
-    auto next = (tail + 1) % QUEUE_COUNT_INDEX_LANE;
+    auto next = (tail + 1) % cpp_lane->submit_capacity;
     if (next == head) {
         // Overwrite oldest (advance head) to avoid artificial drops in integration tests
-        cpp_lane->submit_head.store((head + 1) % QUEUE_COUNT_INDEX_LANE, std::memory_order_release);
+        cpp_lane->submit_head.store((head + 1) % cpp_lane->submit_capacity, std::memory_order_release);
         head = cpp_lane->submit_head.load(std::memory_order_relaxed);
         // Recompute next relative to possibly updated head (tail remains)
-        next = (tail + 1) % QUEUE_COUNT_INDEX_LANE;
+        next = (tail + 1) % cpp_lane->submit_capacity;
         // If still full due to race, just drop
         if (next == head) return false;
     }
@@ -201,7 +217,7 @@ uint32_t lane_take_ring(Lane* lane) {
     if (head == tail) return UINT32_MAX;  // Queue empty
     
     uint32_t ring_idx = cpp_lane->memory_layout->submit_queue[head];
-    cpp_lane->submit_head.store((head + 1) % QUEUE_COUNT_INDEX_LANE, 
+    cpp_lane->submit_head.store((head + 1) % cpp_lane->submit_capacity, 
                                 std::memory_order_release);
     return ring_idx;
 }
@@ -211,7 +227,7 @@ bool lane_return_ring(Lane* lane, uint32_t ring_idx) {
     auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
     auto head = cpp_lane->free_head.load(std::memory_order_relaxed);
     auto tail = cpp_lane->free_tail.load(std::memory_order_acquire);
-    auto next = (tail + 1) % QUEUE_COUNT_INDEX_LANE;
+    auto next = (tail + 1) % cpp_lane->free_capacity;
     if (next == head) return false;  // Queue full
     cpp_lane->memory_layout->free_queue[tail] = ring_idx;
     cpp_lane->free_tail.store(next, std::memory_order_release);
@@ -228,7 +244,7 @@ uint32_t lane_get_free_ring(Lane* lane) {
     if (head == tail) return UINT32_MAX;  // Queue empty
     
     uint32_t ring_idx = cpp_lane->memory_layout->free_queue[head];
-    cpp_lane->free_head.store((head + 1) % QUEUE_COUNT_INDEX_LANE, 
+    cpp_lane->free_head.store((head + 1) % cpp_lane->free_capacity, 
                               std::memory_order_release);
     return ring_idx;
 }
@@ -308,6 +324,30 @@ uint32_t thread_registry_get_capacity(ThreadRegistry* registry) {
     if (!registry) return 0;
     auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
     return cpp_registry->get_capacity();
+}
+
+// Standalone lane initializer for tests/benchmarks
+bool lane_init(Lane* lane,
+               void* ring_memory,
+               size_t ring_size,
+               uint32_t ring_count,
+               void* /*queue_memory*/,
+               size_t /*queue_size*/) {
+    if (!lane || !ring_memory || ring_count == 0) return false;
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
+    auto* layout = new (std::nothrow) ada::internal::LaneMemoryLayout();
+    if (!layout) return false;
+    std::memset(layout, 0, sizeof(*layout));
+    layout->ring_memory_base = ring_memory;
+    layout->ring_memory_size = ring_size * ring_count;
+
+    uint8_t* base = static_cast<uint8_t*>(ring_memory);
+    for (uint32_t i = 0; i < ring_count && i < RINGS_PER_INDEX_LANE; ++i) {
+        layout->ring_ptrs[i] = base + (size_t)i * ring_size;
+    }
+
+    cpp_lane->initialize(layout, ring_count, ring_size, sizeof(IndexEvent), QUEUE_COUNT_INDEX_LANE);
+    return true;
 }
 
 

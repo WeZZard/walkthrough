@@ -11,6 +11,9 @@
 // Need private definitions for concrete implementation
 #include "tracer_types_private.h"
 
+// Optional logging flag defined in C shim (thread_registry.cpp)
+extern bool needs_log_thread_registry_registry;
+
 namespace ada {
 namespace internal {
 
@@ -28,6 +31,8 @@ struct LaneMemoryLayout {
     };
     // Ring buffer pointers array (just void* to memory regions)
     void* ring_ptrs[RINGS_PER_INDEX_LANE];
+    // RingBuffer handles bound to ring_ptrs (attached)
+    ::RingBuffer* rb_handles[RINGS_PER_INDEX_LANE]{};
     
     // Pointer to ring buffer memory (allocated separately)
     void* ring_memory_base;
@@ -84,6 +89,9 @@ public:
     // Ring pool management
     std::atomic<uint32_t> active_idx{0};
     uint32_t ring_count{0};
+    // Queue capacities (modulo bases)
+    uint32_t submit_capacity{QUEUE_COUNT_INDEX_LANE};
+    uint32_t free_capacity{QUEUE_COUNT_INDEX_LANE};
     
     // SPSC queues with proper atomics
     std::atomic<uint32_t> submit_head{0};
@@ -100,37 +108,46 @@ public:
     LaneMemoryLayout* memory_layout{nullptr};
     
     // Initialize lane with structured memory
-    void initialize(LaneMemoryLayout* layout, uint32_t num_rings, size_t ring_size, size_t event_size) {
-        printf("DEBUG: Lane::initialize start - num_rings=%u, ring_size=%zu\n", num_rings, ring_size);
+    void initialize(LaneMemoryLayout* layout, uint32_t num_rings, size_t ring_size, size_t event_size, uint32_t queue_capacity) {
+        if (needs_log_thread_registry_registry) printf("DEBUG: Lane::initialize start - num_rings=%u, ring_size=%zu, qcap=%u\n", num_rings, ring_size, queue_capacity);
         memory_layout = layout;
         ring_count = num_rings;
+        submit_capacity = queue_capacity;
+        free_capacity = queue_capacity;
         
         // Ring buffers are already set up in memory, just verify pointers
         if (layout->ring_memory_base) {
-            printf("DEBUG: Verifying %u ring buffer pointers\n", num_rings);
+            if (needs_log_thread_registry_registry) printf("DEBUG: Verifying %u ring buffer pointers\n", num_rings);
             for (uint32_t i = 0; i < num_rings; ++i) {
                 if (!layout->ring_ptrs[i]) {
-                    printf("DEBUG: ERROR - ring_ptrs[%u] is NULL!\n", i);
+                    if (needs_log_thread_registry_registry) printf("DEBUG: ERROR - ring_ptrs[%u] is NULL!\n", i);
                 } else {
-                    printf("DEBUG: Ring[%u] at %p\n", i, layout->ring_ptrs[i]);
+                    if (needs_log_thread_registry_registry) printf("DEBUG: Ring[%u] at %p\n", i, layout->ring_ptrs[i]);
                 }
             }
         } else {
-            printf("DEBUG: ERROR - ring_memory_base is NULL!\n");
+            if (needs_log_thread_registry_registry) printf("DEBUG: ERROR - ring_memory_base is NULL!\n");
+        }
+
+        // Attach ring buffer handles for each ring
+        for (uint32_t i = 0; i < num_rings; ++i) {
+            if (layout->ring_ptrs[i]) {
+                layout->rb_handles[i] = ring_buffer_attach(layout->ring_ptrs[i], ring_size, event_size);
+            } else {
+                layout->rb_handles[i] = nullptr;
+            }
         }
         
-        printf("DEBUG: Initializing free queue with num_rings=%u\n", num_rings);
+        if (needs_log_thread_registry_registry) printf("DEBUG: Initializing free queue with num_rings=%u\n", num_rings);
         // Initialize free queue with all rings except active (0)
         for (uint32_t i = 1; i < num_rings; ++i) {
-            printf("DEBUG: Setting free_queue[%u] = %u\n", i-1, i);
-            fflush(stdout);
+            if (needs_log_thread_registry_registry) { printf("DEBUG: Setting free_queue[%u] = %u\n", i-1, i); fflush(stdout); }
             layout->free_queue[i - 1] = i;
-            printf("DEBUG: free_queue[%u] set successfully\n", i-1);
-            fflush(stdout);
+            if (needs_log_thread_registry_registry) { printf("DEBUG: free_queue[%u] set successfully\n", i-1); fflush(stdout); }
         }
-        printf("DEBUG: Setting free_tail to %u\n", num_rings - 1);
+        if (needs_log_thread_registry_registry) printf("DEBUG: Setting free_tail to %u\n", num_rings - 1);
         free_tail.store(num_rings - 1, std::memory_order_release);
-        printf("DEBUG: Lane::initialize complete\n");
+        if (needs_log_thread_registry_registry) printf("DEBUG: Lane::initialize complete\n");
     }
     
     // Submit ring for draining (with bounds checking)
@@ -139,7 +156,7 @@ public:
         
         auto head = submit_head.load(std::memory_order_relaxed);
         auto tail = submit_tail.load(std::memory_order_acquire);
-        auto next = (tail + 1) % QUEUE_COUNT_INDEX_LANE;
+        auto next = (tail + 1) % submit_capacity;
         
         if (next == head) return false; // Queue full
         
@@ -151,7 +168,7 @@ public:
     // Get active ring buffer
     void* get_active_ring() {
         auto idx = active_idx.load(std::memory_order_relaxed);
-        return memory_layout->ring_ptrs[idx];
+        return memory_layout->rb_handles[idx];
     }
     
     // Debug print
@@ -189,18 +206,18 @@ public:
     void initialize(uintptr_t tid, uint32_t slot,
                    LaneMemoryLayout* index_memory,
                    LaneMemoryLayout* detail_memory) {
-        printf("DEBUG: ThreadLaneSet::initialize start - tid=%lx, slot=%u\n", tid, slot);
+        if (needs_log_thread_registry_registry) printf("DEBUG: ThreadLaneSet::initialize start - tid=%lx, slot=%u\n", tid, slot);
         thread_id = tid;
         slot_index = slot;
         
-        printf("DEBUG: Initializing index_lane\n");
-        index_lane.initialize(index_memory, RINGS_PER_INDEX_LANE, 64 * 1024, sizeof(IndexEvent));
-        printf("DEBUG: Initializing detail_lane\n");
-        detail_lane.initialize(detail_memory, RINGS_PER_DETAIL_LANE, 256 * 1024, sizeof(DetailEvent));
+        if (needs_log_thread_registry_registry) printf("DEBUG: Initializing index_lane\n");
+        index_lane.initialize(index_memory, RINGS_PER_INDEX_LANE, 64 * 1024, sizeof(IndexEvent), QUEUE_COUNT_INDEX_LANE);
+        if (needs_log_thread_registry_registry) printf("DEBUG: Initializing detail_lane\n");
+        detail_lane.initialize(detail_memory, RINGS_PER_DETAIL_LANE, 256 * 1024, sizeof(DetailEvent), QUEUE_COUNT_DETAIL_LANE);
         
-        printf("DEBUG: Setting active flag\n");
+        if (needs_log_thread_registry_registry) printf("DEBUG: Setting active flag\n");
         active.store(true, std::memory_order_release);
-        printf("DEBUG: ThreadLaneSet::initialize complete\n");
+        if (needs_log_thread_registry_registry) printf("DEBUG: ThreadLaneSet::initialize complete\n");
     }
     
     // Debug helper
@@ -221,6 +238,9 @@ public:
 
 class ThreadRegistry {
 public:
+    // Header markers for attach validation
+    uint32_t magic{0};
+    uint32_t version{0};
     // Registry state
     std::atomic<uint32_t> thread_count{0};
     std::atomic<bool> accepting_registrations{true};
@@ -253,6 +273,9 @@ public:
         // Placement new with clear memory
         std::memset(memory, 0, size);
         auto* registry = new (memory) ThreadRegistry();
+        // Initialize header markers
+        registry->magic = 0x41544152; // 'ATAR' (ADA Thread ARchive marker)
+        registry->version = 1;
         registry->capacity_ = capacity;
         registry->thread_lanes = reinterpret_cast<ThreadLaneSet*>(base_ptr + lanes_off);
         
@@ -287,7 +310,7 @@ public:
     // Register thread with better error handling
     ThreadLaneSet* register_thread(uintptr_t thread_id) {
         if (!accepting_registrations.load(std::memory_order_acquire)) {
-            printf("DEBUG: Not accepting registrations\n");
+            if (needs_log_thread_registry_registry) printf("DEBUG: Not accepting registrations\n");
             return nullptr;
         }
         
@@ -296,17 +319,17 @@ public:
         for (uint32_t i = 0; i < current_count; ++i) {
             if (thread_lanes[i].thread_id == thread_id && 
                 thread_lanes[i].active.load()) {
-                printf("DEBUG: Thread %lx already registered at slot %u\n", thread_id, i);
+                if (needs_log_thread_registry_registry) printf("DEBUG: Thread %lx already registered at slot %u\n", thread_id, i);
                 return &thread_lanes[i];  // Already registered
             }
         }
         
         // Allocate new slot
         uint32_t slot = thread_count.fetch_add(1, std::memory_order_acq_rel);
-        printf("DEBUG: Allocating slot %u for thread %lx (capacity=%u)\n", slot, thread_id, capacity_);
+        if (needs_log_thread_registry_registry) printf("DEBUG: Allocating slot %u for thread %lx (capacity=%u)\n", slot, thread_id, capacity_);
         if (slot >= capacity_) {
             thread_count.fetch_sub(1, std::memory_order_acq_rel);
-            printf("DEBUG: Out of slots! slot=%u >= capacity=%u\n", slot, capacity_);
+            if (needs_log_thread_registry_registry) printf("DEBUG: Out of slots! slot=%u >= capacity=%u\n", slot, capacity_);
             return nullptr;
         }
         
@@ -332,7 +355,7 @@ public:
             uint64_t idx_layout_off = alloc_from(segments[0].used, sizeof(LaneMemoryLayout), segments[0].size, CACHE_LINE_SIZE);
             if (idx_layout_off == UINT64_MAX) {
                 thread_count.fetch_sub(1, std::memory_order_acq_rel);
-                printf("DEBUG: Out of metadata memory while registering thread %lx (index layout)\n", thread_id);
+                if (needs_log_thread_registry_registry) printf("DEBUG: Out of metadata memory while registering thread %lx (index layout)\n", thread_id);
                 return nullptr;
             }
             auto* idx_layout = reinterpret_cast<LaneMemoryLayout*>(pool_base + idx_layout_off);
@@ -343,7 +366,7 @@ public:
             uint64_t det_layout_off = alloc_from(segments[0].used, sizeof(LaneMemoryLayout), segments[0].size, CACHE_LINE_SIZE);
             if (det_layout_off == UINT64_MAX) {
                 thread_count.fetch_sub(1, std::memory_order_acq_rel);
-                printf("DEBUG: Out of metadata memory while registering thread %lx (detail layout)\n", thread_id);
+                if (needs_log_thread_registry_registry) printf("DEBUG: Out of metadata memory while registering thread %lx (detail layout)\n", thread_id);
                 return nullptr;
             }
             auto* det_layout = reinterpret_cast<LaneMemoryLayout*>(pool_base + det_layout_off);
@@ -356,7 +379,7 @@ public:
                 if (off == UINT64_MAX) {
                     // Out of ring memory
                     thread_count.fetch_sub(1, std::memory_order_acq_rel);
-                    printf("DEBUG: Out of index ring memory while registering thread %lx\n", thread_id);
+                    if (needs_log_thread_registry_registry) printf("DEBUG: Out of index ring memory while registering thread %lx\n", thread_id);
                     return nullptr;
                 }
                 uint8_t* ring_ptr = pool_base + off;
@@ -370,7 +393,7 @@ public:
                 uint64_t off = alloc_from(segments[0].used, 256 * 1024, segments[0].size, 4096);
                 if (off == UINT64_MAX) {
                     thread_count.fetch_sub(1, std::memory_order_acq_rel);
-                    printf("DEBUG: Out of detail ring memory while registering thread %lx\n", thread_id);
+                    if (needs_log_thread_registry_registry) printf("DEBUG: Out of detail ring memory while registering thread %lx\n", thread_id);
                     return nullptr;
                 }
                 uint8_t* ring_ptr = pool_base + off;
@@ -391,8 +414,7 @@ public:
             thread_lanes[slot].active.store(true, std::memory_order_release);
         }
         
-        printf("DEBUG: Returning thread_lanes[%u] at %p\n", slot, &thread_lanes[slot]);
-        fflush(stdout);
+        if (needs_log_thread_registry_registry) { printf("DEBUG: Returning thread_lanes[%u] at %p\n", slot, &thread_lanes[slot]); fflush(stdout); }
         return &thread_lanes[slot];
     }
     
@@ -426,6 +448,11 @@ public:
         // Check alignment
         if (reinterpret_cast<uintptr_t>(this) % CACHE_LINE_SIZE != 0) {
             fprintf(stderr, "Registry not cache-aligned\n");
+            return false;
+        }
+        // Check markers
+        if (magic != 0x41544152 || version != 1) {
+            fprintf(stderr, "Registry magic/version invalid (magic=0x%x version=%u)\n", magic, version);
             return false;
         }
         

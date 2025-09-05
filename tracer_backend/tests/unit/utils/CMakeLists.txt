@@ -71,23 +71,6 @@ target_link_libraries(test_thread_registry
         Threads::Threads
 )
 
-# Thread Registry C++ test
-add_executable(test_thread_registry_cpp
-    test_thread_registry_cpp.cpp
-)
-target_include_directories(test_thread_registry_cpp
-    PRIVATE
-        ${CMAKE_SOURCE_DIR}/include/utils
-        ${CMAKE_SOURCE_DIR}/src/utils  # For private headers
-)
-target_link_libraries(test_thread_registry_cpp
-    PRIVATE
-        test_main
-        GTest::gtest
-        GTest::gmock
-        tracer_utils
-        Threads::Threads
-)
 
 # Test Discovery
 gtest_discover_tests(test_ring_buffer
@@ -114,12 +97,6 @@ gtest_discover_tests(test_thread_registry
     DISCOVERY_TIMEOUT 60
     PROPERTIES LABELS "unit"
 )
-gtest_discover_tests(test_thread_registry_cpp
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DISCOVERY_MODE PRE_TEST
-    DISCOVERY_TIMEOUT 60
-    PROPERTIES LABELS "unit"
-)
 
 # Install targets
 install(TARGETS
@@ -127,6 +104,5 @@ install(TARGETS
     test_ring_buffer_attach
     test_shared_memory
     test_thread_registry
-    test_thread_registry_cpp
     RUNTIME DESTINATION bin
 )

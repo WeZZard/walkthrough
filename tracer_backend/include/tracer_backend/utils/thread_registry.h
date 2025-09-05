@@ -44,7 +44,6 @@ ThreadRegistry* thread_registry_attach(void* memory);
 // Memory ordering: Uses memory_order_acq_rel for slot allocation
 ThreadLaneSet* thread_registry_register(ThreadRegistry* registry, uintptr_t thread_id);
 
-extern bool needs_log_thread_registry_registry;
 
 // Get lanes for current thread (fast path with TLS caching)
 // Returns: cached ThreadLaneSet pointer, or NULL if not registered

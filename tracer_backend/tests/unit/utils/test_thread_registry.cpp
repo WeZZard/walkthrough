@@ -10,6 +10,7 @@
 extern "C" {
 #include <tracer_backend/utils/shared_memory.h>
 #include <tracer_backend/utils/ring_buffer.h>
+#include <tracer_backend/utils/thread_registry.h>
 }
 
 #include "thread_registry_private.h"
@@ -462,4 +463,78 @@ TEST_F(ThreadRegistryTest, isolation__no_false_sharing__then_independent_perform
     // Performance info
     printf("  Cache isolation: mean=%.2f M ops/sec, CV=%.1f%% (threshold=%.0f%%)\n", 
            mean / 1000000.0, cv * 100, cv_threshold * 100);
+}
+
+// New: Attach API validation
+TEST_F(ThreadRegistryTest, thread_registry__attach__then_valid) {
+    // Use memory already initialized by create() in SetUp
+    void* shm_addr = memory;
+    ASSERT_NE(shm_addr, nullptr);
+
+    // Attach via C API
+    ThreadRegistry* attached = thread_registry_attach(shm_addr);
+    ASSERT_NE(attached, nullptr);
+
+    // Validate capacity via C API accessor
+    uint32_t cap = thread_registry_get_capacity(attached);
+    EXPECT_EQ(cap, registry->get_capacity());
+}
+
+// New: Memory layout debuggability (from C++ tests)
+TEST_F(ThreadRegistryTest, thread_registry__memory_layout__then_debuggable) {
+    auto* lanes = registry->register_thread(12345);
+    ASSERT_NE(lanes, nullptr);
+    
+    EXPECT_NE(lanes->index_lane.memory_layout, nullptr);
+    EXPECT_NE(lanes->detail_lane.memory_layout, nullptr);
+    
+    auto* index_layout = lanes->index_lane.memory_layout;
+    for (uint32_t i = 0; i < RINGS_PER_INDEX_LANE; i++) {
+        EXPECT_NE(index_layout->ring_ptrs[i], nullptr) << "Ring " << i << " should be initialized";
+    }
+    // Direct memory access is possible (debuggability)
+    index_layout->submit_queue[0] = 42;
+    EXPECT_EQ(index_layout->submit_queue[0], 42u);
+}
+
+// New: Alignment checks for registry and queues (from C++ tests)
+TEST_F(ThreadRegistryTest, thread_registry__alignment_structures__then_cache_aligned) {
+    // Registry alignment
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(registry) % CACHE_LINE_SIZE, 0u);
+    // Thread lane set alignment
+    for (uint32_t i = 0; i < registry->get_capacity(); i++) {
+        auto addr = reinterpret_cast<uintptr_t>(&registry->thread_lanes[i]);
+        EXPECT_EQ(addr % CACHE_LINE_SIZE, 0u);
+    }
+    // Queue alignment
+    auto* lanes = registry->register_thread(67890);
+    ASSERT_NE(lanes, nullptr);
+    auto* index_layout = lanes->index_lane.memory_layout;
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(index_layout->submit_queue) % CACHE_LINE_SIZE, 0u);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(index_layout->free_queue) % CACHE_LINE_SIZE, 0u);
+}
+
+// New: Debug dump captured output (from C++ tests)
+TEST_F(ThreadRegistryTest, thread_registry__debug_dump__then_contains_expected_strings) {
+    auto* lanes1 = registry->register_thread(12345);
+    auto* lanes2 = registry->register_thread(67890);
+    ASSERT_NE(lanes1, nullptr);
+    ASSERT_NE(lanes2, nullptr);
+    testing::internal::CaptureStdout();
+    registry->debug_dump();
+    std::string output = testing::internal::GetCapturedStdout();
+    EXPECT_NE(output.find("ThreadRegistry Debug Dump"), std::string::npos);
+    EXPECT_NE(output.find("Thread count: 2"), std::string::npos);
+}
+
+// New: C API compatibility smoke test (from C++ tests)
+TEST_F(ThreadRegistryTest, thread_registry__c_api_compatibility__then_works) {
+    // Re-init registry through the C API on the same memory region
+    ThreadRegistry* c_registry = thread_registry_init(memory, memory_size);
+    ASSERT_NE(c_registry, nullptr);
+    ThreadLaneSet* c_lanes = thread_registry_register(c_registry, 12345);
+    ASSERT_NE(c_lanes, nullptr);
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(c_registry);
+    EXPECT_EQ(cpp_registry->thread_count.load(), 1u);
+    thread_registry_dump(c_registry);
 }
