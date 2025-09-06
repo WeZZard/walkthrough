@@ -61,16 +61,10 @@ TEST_F(AgentLoaderTest, agent_loader__load_and_init__then_hooks_installed) {
     result = frida_controller_attach(controller, agent_pid);
     ASSERT_EQ(result, 0);
     
-    // 4. Install hooks (this loads the agent)
-    printf("  4. Installing hooks (loading agent)...\n");
-    const char* old_rpath = getenv("ADA_AGENT_RPATH_SEARCH_PATHS");
-    setenv("ADA_AGENT_RPATH_SEARCH_PATHS", ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/lib", 1);
-    result = frida_controller_install_hooks(controller);
-    if (old_rpath) {
-        setenv("ADA_AGENT_RPATH_SEARCH_PATHS", old_rpath, 1);
-    } else {
-        unsetenv("ADA_AGENT_RPATH_SEARCH_PATHS");
-    }
+    // 4. Inject agent explicitly (align with BaselineHooks path)
+    printf("  4. Injecting agent...\n");
+    result = frida_controller_inject_agent(controller,
+        ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/lib/libfrida_agent.dylib");
 
     if (result != 0) {
         printf("  ✗ Failed to install hooks/load agent\n");

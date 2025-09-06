@@ -117,3 +117,16 @@ RingBufferHeader* ring_buffer_get_header(RingBuffer* rb) {
 }
 
 } // extern "C"
+
+// Additional C API (not in extern "C" block above to maintain grouping)
+extern "C" {
+
+uint64_t ring_buffer_get_overflow_count(RingBuffer* rb) {
+    if (!rb) return 0;
+    auto* impl = reinterpret_cast<ada::internal::RingBuffer*>(rb);
+    auto* hdr = impl->get_header();
+    if (!hdr) return 0;
+    return __atomic_load_n(&hdr->overflow_count, __ATOMIC_ACQUIRE);
+}
+
+}

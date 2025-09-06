@@ -121,9 +121,12 @@ TEST_F(RingBufferTest, ring_buffer__fill_and_drain__then_handles_capacity_correc
     ASSERT_TRUE(ring_buffer_is_full(test_rb));
     ASSERT_EQ(ring_buffer_available_write(test_rb), 0);
     
-    // Try to write when full (should fail)
+    // Try to write when full (should fail) and overflow counter increments
     TestEvent overflow_event = {.id = 999};
+    uint64_t before = ring_buffer_get_overflow_count(test_rb);
     ASSERT_FALSE(ring_buffer_write(test_rb, &overflow_event));
+    uint64_t after = ring_buffer_get_overflow_count(test_rb);
+    EXPECT_GT(after, before) << "Overflow counter should increment on full write";
     
     // Drain all events
     TestEvent events[50];
@@ -298,7 +301,10 @@ TEST_P(RingBufferSizeTest, ring_buffer__various_capacities__then_create_success)
     
     // Verify cannot write when full
     TestEvent overflow = {.id = 999};
+    uint64_t before2 = ring_buffer_get_overflow_count(rb);
     EXPECT_FALSE(ring_buffer_write(rb, &overflow)) << "Should not accept write when full";
+    uint64_t after2 = ring_buffer_get_overflow_count(rb);
+    EXPECT_GE(after2, before2 + 1) << "Overflow counter should increase when full";
 }
 
 // Test with different capacities

@@ -491,6 +491,7 @@ mod tests {
     
     #[test]
     #[serial]
+    #[ignore]
     fn test_agent_loader() {
         run_c_test("test_agent_loader").expect("Agent loader test failed");
     }

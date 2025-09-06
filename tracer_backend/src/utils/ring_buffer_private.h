@@ -45,6 +45,7 @@ public:
         // Use C11 atomic operations on _Atomic members
         __atomic_store_n(&header_->write_pos, 0, __ATOMIC_RELAXED);
         __atomic_store_n(&header_->read_pos, 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&header_->overflow_count, (uint64_t)0, __ATOMIC_RELAXED);
         
         return true;
     }
@@ -78,7 +79,9 @@ public:
         
         // Check if full
         if (next_pos == read_pos) {
-            return false; // Buffer full
+            // Buffer full: increment overflow counter and reject write
+            __atomic_fetch_add(&header_->overflow_count, (uint64_t)1, __ATOMIC_RELAXED);
+            return false;
         }
         
         // Copy event

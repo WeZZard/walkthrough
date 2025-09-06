@@ -77,7 +77,10 @@ typedef struct {
     uint32_t capacity;      // Number of events
     uint32_t write_pos;     // Write position (use atomic ops!)
     uint32_t read_pos;      // Read position (use atomic ops!)
-    uint32_t _reserved[11]; // Reserved for future use
+    // Overflow metrics (incremented when writes occur on full buffer)
+    uint64_t overflow_count;
+    // Reserved for future expansion (layout aligns with C and C++)
+    uint32_t _reserved[9];
 } RingBufferHeader;
 #endif
 

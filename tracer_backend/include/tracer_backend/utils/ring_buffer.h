@@ -40,6 +40,9 @@ size_t ring_buffer_get_event_size(RingBuffer* rb);
 size_t ring_buffer_get_capacity(RingBuffer* rb);
 RingBufferHeader* ring_buffer_get_header(RingBuffer* rb);
 
+// Metrics accessors
+uint64_t ring_buffer_get_overflow_count(RingBuffer* rb);
+
 #ifdef __cplusplus
 }
 #endif
