@@ -1,10 +1,16 @@
 # M1_E1_I4 Backlogs: Agent Loader
 
-Status: IN PROGRESS
+Status: COMPLETE
 
-Notes:
-- Local + SSH/CI codesigning guidance available in utils/sign_binary.sh.
-- Integration tests (spawn/attach, missing library, shared memory verification) are passing; work will focus on diagnostics and configuration polish.
+Completion Summary:
+- Native dylib injection path hardened (spawn + attach) with clear diagnostics and timeouts.
+- Shared memory connection verified post-injection; missing-library case handled cleanly.
+- Local/SSH/CI codesigning documented and validated via integration gate.
+- All new and existing tests pass under the integration gate.
+
+Post-Iteration Deprecation (Scheduled):
+- Remove QuickJS-based agent injection after I4, contingent on all tests and the integration gate remaining green.
+- Prerequisites: no regressions in native injection; all existing tests (spawn/attach/missing library) and new loader diagnostics tests passing.
 
 ## Sprint Planning
 

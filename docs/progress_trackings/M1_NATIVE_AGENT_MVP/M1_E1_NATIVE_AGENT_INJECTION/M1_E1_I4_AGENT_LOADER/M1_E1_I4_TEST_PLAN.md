@@ -813,3 +813,8 @@ genhtml coverage.info --output-directory coverage
 | Memory leaks | Valgrind testing, ASAN | Memory tests |
 | Race conditions | Thread sanitizer, stress tests | Concurrency tests |
 | Code signing issues | Automated signing script | Platform tests |
+# Exit Criteria
+
+- All new and existing loader tests pass (spawn/attach injection, missing library, shared memory verification).
+- Integration gate passes with code signing enabled (local/SSH/CI as applicable).
+- QuickJS-script-based injection scheduled for removal (post-I4) with no functional gaps remaining.

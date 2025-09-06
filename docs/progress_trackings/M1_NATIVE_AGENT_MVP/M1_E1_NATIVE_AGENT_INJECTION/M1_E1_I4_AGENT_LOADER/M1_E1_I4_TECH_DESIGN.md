@@ -700,3 +700,20 @@ impl AgentLoaderBuilder {
    - Connect to session shared memory
    - Pass session_id and pid correctly
    - Support graceful detachment
+# Deprecation Plan (End of I4)
+
+Objective: Remove the QuickJS-script-based agent injection once I4 completes, with no functional gaps.
+
+Prerequisites:
+- Native dylib injection succeeds for both spawn and attach modes.
+- Shared memory connection is verified post-injection.
+- Missing-library path fails fast with clear diagnostics.
+- All existing and new tests pass locally and in the integration gate.
+
+Removal Steps:
+1. Disable script injection by default and gate behind a legacy build flag for one iteration (if needed).
+2. Update docs/tests to use native injection paths exclusively.
+3. After soak (no regressions), remove legacy script injection code and tests.
+
+Scope Notes:
+- This plan does not affect native dylib injection; it is the authoritative path going forward.
