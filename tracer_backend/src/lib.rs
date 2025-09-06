@@ -18,10 +18,10 @@ pub mod ffi {
     #![allow(dead_code)]
     
     // Try to include generated bindings, fall back to manual definitions
-    #[cfg(has_bindgen)]
+    #[cfg(feature = "bindgen")]
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
     
-    #[cfg(not(has_bindgen))]
+    #[cfg(not(feature = "bindgen"))]
     pub mod manual {
         use std::os::raw::{c_char, c_int, c_uint};
         
@@ -73,7 +73,7 @@ pub mod ffi {
         }
     }
     
-    #[cfg(not(has_bindgen))]
+    #[cfg(not(feature = "bindgen"))]
     pub use manual::*;
 }
 

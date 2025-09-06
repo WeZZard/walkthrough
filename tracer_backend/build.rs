@@ -46,6 +46,15 @@ fn main() {
         cmake_config.define("ENABLE_COVERAGE", "ON");
         // Don't set LLVM_PROFILE_FILE here - it should be set at runtime when tests execute
     }
+    // Opt-in sanitizers via env toggles
+    if env::var("ADA_ENABLE_THREAD_SANITIZER").is_ok() {
+        println!("cargo:warning=ThreadSanitizer enabled for C/C++ code");
+        cmake_config.define("ENABLE_THREAD_SANITIZER", "ON");
+    }
+    if env::var("ADA_ENABLE_ADDRESS_SANITIZER").is_ok() {
+        println!("cargo:warning=AddressSanitizer enabled for C/C++ code");
+        cmake_config.define("ENABLE_ADDRESS_SANITIZER", "ON");
+    }
     
     // Enable C++ registry if feature is set
     

@@ -434,3 +434,30 @@ void ada_ring_set_overflow_mode(ada_ring_buffer_t* ring,
    - No data races
    - Proper synchronization
    - Memory ordering correctness
+
+## Implementation Addendum (M1 Scope)
+
+- For M1, the production path uses fixed-size event rings (IndexEvent/DetailEvent). The variable-length event header discussed in earlier drafts is deferred to a later iteration to minimize risk.
+- Effective capacity is rounded down to the nearest power-of-two; a cached mask is used for wrap and availability arithmetic.
+- Producer and consumer indices are placed on separate cache lines to reduce false sharing.
+- Lightweight smoke tests for throughput and p99 latency validate basic performance characteristics in CI; deeper benchmarks and long-duration stress should be run locally when tuning.
+
+### Local Validation Tips
+
+- Enable ThreadSanitizer for C/C++ via Cargo’s CMake bridge:
+
+```
+ADA_ENABLE_THREAD_SANITIZER=1 cargo test -p tracer_backend --lib
+```
+
+- Enable AddressSanitizer similarly:
+
+```
+ADA_ENABLE_ADDRESS_SANITIZER=1 cargo test -p tracer_backend --lib
+```
+
+- Run ring-only tests:
+
+```
+cargo test -p tracer_backend --lib tests::test_ring_buffer
+```

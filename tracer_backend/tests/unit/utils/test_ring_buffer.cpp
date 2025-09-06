@@ -328,6 +328,32 @@ INSTANTIATE_TEST_SUITE_P(
     }
 );
 
+// Short stress test to catch basic stability issues without slowing CI
+TEST_F(RingBufferTest, ring_buffer__short_stress__then_stable) {
+    rb = ring_buffer_create(memory.get(), buffer_size, sizeof(TestEvent));
+    ASSERT_NE(rb, nullptr);
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> wc{0}, rc{0};
+    std::thread prod([&]{
+        TestEvent ev{};
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (ring_buffer_write(rb, &ev)) wc.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    std::thread cons([&]{
+        TestEvent out{};
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (ring_buffer_read(rb, &out)) rc.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    stop = true;
+    prod.join();
+    cons.join();
+    EXPECT_GT(wc.load(), 0u);
+    EXPECT_GT(rc.load(), 0u);
+}
+
 // Alignment test: producer/consumer fields should be on separate cache lines
 TEST_F(RingBufferTest, ring_buffer__header_alignment__then_no_false_sharing) {
     rb = ring_buffer_create(memory.get(), buffer_size, sizeof(TestEvent));
