@@ -129,10 +129,10 @@ public:
             if (needs_log_thread_registry_registry) printf("DEBUG: ERROR - ring_memory_base is NULL!\n");
         }
 
-        // Attach ring buffer handles for each ring
+        // Initialize ring buffer handles for each ring (create headers in shared memory)
         for (uint32_t i = 0; i < num_rings; ++i) {
             if (layout->ring_ptrs[i]) {
-                layout->rb_handles[i] = ring_buffer_attach(layout->ring_ptrs[i], ring_size, event_size);
+                layout->rb_handles[i] = ring_buffer_create(layout->ring_ptrs[i], ring_size, event_size);
             } else {
                 layout->rb_handles[i] = nullptr;
             }

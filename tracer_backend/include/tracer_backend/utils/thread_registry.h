@@ -123,6 +123,13 @@ uint32_t thread_registry_get_capacity(ThreadRegistry* registry);
 // Unregister a thread by system thread id; updates active set and counts
 bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread_id);
 
+// Attach a temporary RingBuffer handle to the lane's active ring using registry's base
+// ring_size/event_size must match the lane type
+struct RingBuffer* thread_registry_attach_active_ring(ThreadRegistry* registry,
+                                                     Lane* lane,
+                                                     size_t ring_size,
+                                                     size_t event_size);
+
 // ============================================================================
 // Thread-local storage
 // ============================================================================

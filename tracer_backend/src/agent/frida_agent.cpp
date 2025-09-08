@@ -546,7 +546,12 @@ static void capture_index_event(AgentContext* ctx, HookData* hook,
         target_rb = reinterpret_cast<::RingBuffer*>(ctx->index_ring());
     }
 
-    if (ring_buffer_write(target_rb, &event)) {
+    bool wrote = ring_buffer_write(target_rb, &event);
+    // Also mirror to process-global ring for compatibility with existing drain path
+    if (ctx->index_ring()) {
+        (void)ring_buffer_write(reinterpret_cast<::RingBuffer*>(ctx->index_ring()), &event);
+    }
+    if (wrote) {
         g_debug("[Agent] Wrote index event\n");
         ctx->increment_events_emitted();
     } else {
@@ -631,7 +636,12 @@ static void capture_detail_event(AgentContext* ctx, HookData* hook,
         target_rb = reinterpret_cast<::RingBuffer*>(ctx->detail_ring());
     }
 
-    if (ring_buffer_write(target_rb, &detail)) {
+    bool wrote = ring_buffer_write(target_rb, &detail);
+    // Mirror to process-global detail ring for compatibility
+    if (ctx->detail_ring()) {
+        (void)ring_buffer_write(reinterpret_cast<::RingBuffer*>(ctx->detail_ring()), &detail);
+    }
+    if (wrote) {
         g_debug("[Agent] Wrote detail event\n");
         ctx->increment_events_emitted();
     } else {

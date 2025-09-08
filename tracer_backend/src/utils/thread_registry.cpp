@@ -25,6 +25,7 @@ bool needs_log_thread_registry_registry = false;
 extern "C" {
 
 #include <tracer_backend/utils/thread_registry.h>
+#include <tracer_backend/utils/ring_buffer.h>
 
 // TLS variable for C compatibility
 __thread ThreadLaneSet* tls_my_lanes = nullptr;
@@ -109,6 +110,27 @@ struct RingBuffer* lane_get_active_ring(Lane* lane) {
     if (!layout) return nullptr;
     if (idx >= cpp_lane->ring_count) return nullptr;
     return layout->rb_handles[idx];
+}
+
+RingBuffer* thread_registry_attach_active_ring(ThreadRegistry* registry,
+                                               Lane* lane,
+                                               size_t ring_size,
+                                               size_t event_size) {
+    if (!registry || !lane) return nullptr;
+    auto* cpp_registry = reinterpret_cast<ada::internal::ThreadRegistry*>(registry);
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
+    auto idx = cpp_lane->active_idx.load(std::memory_order_relaxed);
+    auto* layout = cpp_lane->memory_layout;
+    if (!layout) return nullptr;
+    if (idx >= cpp_lane->ring_count) return nullptr;
+    // Compute ring pointer from segment base + offset to be process-agnostic
+    uint32_t seg_id = layout->ring_descs[idx].segment_id;
+    if (seg_id == 0 || seg_id > cpp_registry->segment_count.load()) return nullptr;
+    auto& seg = cpp_registry->segments[seg_id - 1];
+    uint8_t* reg_base = reinterpret_cast<uint8_t*>(cpp_registry);
+    uint8_t* seg_base = reg_base + seg.base_offset;
+    uint8_t* ring_ptr = seg_base + layout->ring_descs[idx].offset;
+    return ring_buffer_attach(ring_ptr, ring_size, event_size);
 }
 
 bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread_id) {

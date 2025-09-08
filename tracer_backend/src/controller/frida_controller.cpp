@@ -1,5 +1,8 @@
 #include "frida_controller_internal.h"
 #include "../utils/ring_buffer_private.h"
+extern "C" {
+#include <tracer_backend/utils/ring_buffer.h>
+}
 #include "../utils/thread_registry_private.h"
 
 #include <cstring>
@@ -670,33 +673,63 @@ void FridaController::drain_thread_main() {
     g_debug("Drain thread initialized\n");
     
     while (drain_running_) {
-        // Drain index lane
-        size_t index_count = index_ring_->read_batch(
-            index_events.get(), INDEX_BATCH_SIZE);
-        
-        if (index_count > 0) {
-            stats_.events_captured += index_count;
-            stats_.bytes_written += index_count * sizeof(IndexEvent);
-            
-            // Write to file if open
-            if (output_file_) {
-                fwrite(index_events.get(), sizeof(IndexEvent), 
-                      index_count, output_file_);
+        size_t index_count = 0;
+        size_t detail_count = 0;
+
+        if (registry_) {
+            // Drain per-thread lanes when registry is available
+            uint32_t cap = thread_registry_get_capacity(registry_);
+            for (uint32_t i = 0; i < cap; ++i) {
+                ::ThreadLaneSet* lanes = thread_registry_get_thread_at(registry_, i);
+                if (!lanes) continue;
+                ::Lane* idx_lane = thread_lanes_get_index_lane(lanes);
+                ::RingBuffer* idx_rb = thread_registry_attach_active_ring(registry_, idx_lane,
+                                                                          64 * 1024, sizeof(IndexEvent));
+                if (idx_rb) {
+                    size_t n = ring_buffer_read_batch(idx_rb, index_events.get(), INDEX_BATCH_SIZE);
+                    if (n > 0) {
+                        index_count += n;
+                        stats_.events_captured += n;
+                        stats_.bytes_written += n * sizeof(IndexEvent);
+                        if (output_file_) {
+                            fwrite(index_events.get(), sizeof(IndexEvent), n, output_file_);
+                        }
+                    }
+                    ring_buffer_destroy(idx_rb);
+                }
+
+                ::Lane* det_lane = thread_lanes_get_detail_lane(lanes);
+                ::RingBuffer* det_rb = thread_registry_attach_active_ring(registry_, det_lane,
+                                                                          256 * 1024, sizeof(DetailEvent));
+                if (det_rb) {
+                    size_t n = ring_buffer_read_batch(det_rb, detail_events.get(), DETAIL_BATCH_SIZE);
+                    if (n > 0) {
+                        detail_count += n;
+                        stats_.events_captured += n;
+                        stats_.bytes_written += n * sizeof(DetailEvent);
+                        if (output_file_) {
+                            fwrite(detail_events.get(), sizeof(DetailEvent), n, output_file_);
+                        }
+                    }
+                    ring_buffer_destroy(det_rb);
+                }
             }
         }
-        
-        // Drain detail lane
-        size_t detail_count = detail_ring_->read_batch(
-            detail_events.get(), DETAIL_BATCH_SIZE);
-        
-        if (detail_count > 0) {
-            stats_.events_captured += detail_count;
-            stats_.bytes_written += detail_count * sizeof(DetailEvent);
-            
-            // Write to file if open
+        // Always also drain process-global rings (compatibility path)
+        size_t g_index = index_ring_->read_batch(index_events.get(), INDEX_BATCH_SIZE);
+        if (g_index > 0) {
+            stats_.events_captured += g_index;
+            stats_.bytes_written += g_index * sizeof(IndexEvent);
             if (output_file_) {
-                fwrite(detail_events.get(), sizeof(DetailEvent),
-                      detail_count, output_file_);
+                fwrite(index_events.get(), sizeof(IndexEvent), g_index, output_file_);
+            }
+        }
+        size_t g_detail = detail_ring_->read_batch(detail_events.get(), DETAIL_BATCH_SIZE);
+        if (g_detail > 0) {
+            stats_.events_captured += g_detail;
+            stats_.bytes_written += g_detail * sizeof(DetailEvent);
+            if (output_file_) {
+                fwrite(detail_events.get(), sizeof(DetailEvent), g_detail, output_file_);
             }
         }
         
