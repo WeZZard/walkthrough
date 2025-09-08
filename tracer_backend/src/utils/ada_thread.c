@@ -114,10 +114,14 @@ void ada_exit_trace(ada_reentrancy_guard_t guard) {
 
 void ada_tls_thread_cleanup(void) {
     ThreadLaneSet* lanes = g_tls_state.lanes;
-    if (lanes) {
-        // Mark inactive; registry may reuse later
+    ThreadRegistry* reg = ada_get_global_registry();
+    if (lanes && reg) {
+        // Unregister by id to update active set and counts
+        uintptr_t tid = (uintptr_t)pthread_self();
+        (void)thread_registry_unregister_by_id(reg, tid);
+    } else if (lanes) {
+        // Best-effort fallback
         thread_registry_unregister(lanes);
     }
     ada_reset_tls_state();
 }
-

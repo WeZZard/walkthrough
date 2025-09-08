@@ -245,6 +245,8 @@ public:
     std::atomic<uint32_t> thread_count{0};
     std::atomic<bool> accepting_registrations{true};
     std::atomic<bool> shutdown_requested{false};
+    // Active slot mask: bit i = slot i active (capacity <= 64)
+    std::atomic<uint64_t> active_mask{0};
     uint32_t capacity_{MAX_THREADS};
     // Multi-segment table (epoched)
     std::atomic<uint32_t> segment_count{0};
@@ -314,9 +316,8 @@ public:
             return nullptr;
         }
         
-        // Try to find existing registration
-        uint32_t current_count = thread_count.load();
-        for (uint32_t i = 0; i < current_count; ++i) {
+        // Try to find existing registration (scan active slots)
+        for (uint32_t i = 0; i < capacity_; ++i) {
             if (thread_lanes[i].thread_id == thread_id && 
                 thread_lanes[i].active.load()) {
                 if (needs_log_thread_registry_registry) printf("DEBUG: Thread %lx already registered at slot %u\n", thread_id, i);
@@ -324,14 +325,33 @@ public:
             }
         }
         
-        // Allocate new slot
-        uint32_t slot = thread_count.fetch_add(1, std::memory_order_acq_rel);
-        if (needs_log_thread_registry_registry) printf("DEBUG: Allocating slot %u for thread %lx (capacity=%u)\n", slot, thread_id, capacity_);
-        if (slot >= capacity_) {
-            thread_count.fetch_sub(1, std::memory_order_acq_rel);
-            if (needs_log_thread_registry_registry) printf("DEBUG: Out of slots! slot=%u >= capacity=%u\n", slot, capacity_);
-            return nullptr;
+        // Allocate new slot via CAS on active_mask
+        uint32_t slot = UINT32_MAX;
+        while (true) {
+            uint64_t mask = active_mask.load(std::memory_order_acquire);
+            // Quick check: if all low capacity_ bits are set, full
+            if (capacity_ >= 64 && mask == UINT64_MAX) {
+                if (needs_log_thread_registry_registry) printf("DEBUG: Out of slots (mask full)\n");
+                return nullptr;
+            }
+            // Find first free slot
+            uint32_t candidate = UINT32_MAX;
+            for (uint32_t i = 0; i < capacity_; ++i) {
+                if (((mask >> i) & 1ull) == 0ull) { candidate = i; break; }
+            }
+            if (candidate == UINT32_MAX) {
+                if (needs_log_thread_registry_registry) printf("DEBUG: No free slot found up to capacity=%u (mask=0x%llx)\n", capacity_, (unsigned long long)mask);
+                return nullptr;
+            }
+            uint64_t new_mask = mask | (1ull << candidate);
+            if (active_mask.compare_exchange_weak(mask, new_mask, std::memory_order_acq_rel, std::memory_order_acquire)) {
+                slot = candidate;
+                break;
+            }
+            // CAS failed, retry with updated mask
         }
+        thread_count.fetch_add(1, std::memory_order_acq_rel);
+        if (needs_log_thread_registry_registry) printf("DEBUG: Allocated slot %u for thread %lx (capacity=%u)\n", slot, thread_id, capacity_);
         
         // Initialize slot (only if not already initialized)
         if (thread_lanes[slot].thread_id == 0) {

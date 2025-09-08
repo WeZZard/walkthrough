@@ -120,6 +120,9 @@ ThreadLaneSet* thread_registry_get_thread_at(ThreadRegistry* registry, uint32_t 
 // Get configured runtime capacity (pressure cap) for this registry
 uint32_t thread_registry_get_capacity(ThreadRegistry* registry);
 
+// Unregister a thread by system thread id; updates active set and counts
+bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread_id);
+
 // ============================================================================
 // Thread-local storage
 // ============================================================================

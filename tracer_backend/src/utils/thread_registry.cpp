@@ -118,7 +118,19 @@ bool thread_registry_unregister_by_id(ThreadRegistry* registry, uintptr_t thread
     // Find and deactivate thread
     for (uint32_t i = 0; i < cpp_registry->thread_count.load(); ++i) {
         if (cpp_registry->thread_lanes[i].thread_id == thread_id) {
-            cpp_registry->thread_lanes[i].active.store(false);
+            bool was_active = cpp_registry->thread_lanes[i].active.exchange(false);
+            if (was_active) {
+                // Clear active_mask bit with CAS
+                uint64_t bit = 1ull << i;
+                uint64_t mask = cpp_registry->active_mask.load(std::memory_order_acquire);
+                while (mask & bit) {
+                    uint64_t new_mask = mask & ~bit;
+                    if (cpp_registry->active_mask.compare_exchange_weak(mask, new_mask, std::memory_order_acq_rel, std::memory_order_acquire)) {
+                        cpp_registry->thread_count.fetch_sub(1, std::memory_order_acq_rel);
+                        break;
+                    }
+                }
+            }
             return true;
         }
     }
