@@ -65,8 +65,33 @@ fn run_test_bin(bin: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn run_gtest(bin: &str, filter: &str) -> io::Result<()> {
+    let mut cmd = Command::new(bin);
+    cmd.arg("--gtest_brief=1")
+        .arg(format!("--gtest_filter={}", filter))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = cmd.output()?;
+    if !output.status.success() {
+        eprintln!("FAILED: {} :: {}", bin, filter);
+        eprintln!("stdout:\n{}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+        panic!("cpp gtest failed: {} :: {}", bin, filter);
+    }
+    Ok(())
+}
+
+// Include generated per-gtest wrappers (if any)
+include!(concat!(env!("OUT_DIR"), "/generated_cpp.rs"));
+
 #[test]
 fn run_cpp_gtests() {
+    // If per-case wrappers were generated, skip the legacy aggregator
+    if option_env!("ADA_CPP_TESTS_GENERATED").is_some() {
+        eprintln!("Skipping legacy C++ test aggregator (wrappers present)");
+        return;
+    }
     let dirs = test_dirs();
     assert!(!dirs.is_empty(), "No C++ test directories found");
     let mut ran = 0usize;

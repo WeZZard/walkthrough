@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cstddef>
 
 // We need to carefully handle the C/C++ compatibility
 // RingBufferHeader is defined in tracer_types.h with _Atomic
@@ -32,11 +33,20 @@ public:
         if (!memory || size < sizeof(RingBufferHeader) + event_size) {
             return false;
         }
-        
-        header_ = static_cast<RingBufferHeader*>(memory);
-        buffer_ = static_cast<uint8_t*>(memory) + sizeof(RingBufferHeader);
+        // Align header placement to CACHE_LINE_SIZE within provided memory block
+        auto base = reinterpret_cast<uint8_t*>(memory);
+        auto end  = base + size;
+        auto aligned = reinterpret_cast<uint8_t*>(
+            (reinterpret_cast<uintptr_t>(base) + (CACHE_LINE_SIZE - 1)) & ~static_cast<uintptr_t>(CACHE_LINE_SIZE - 1)
+        );
+        if (aligned + sizeof(RingBufferHeader) + event_size > end) {
+            return false;
+        }
+
+        header_ = reinterpret_cast<RingBufferHeader*>(aligned);
+        buffer_ = aligned + sizeof(RingBufferHeader);
         event_size_ = event_size;
-        buffer_size_ = size - sizeof(RingBufferHeader);
+        buffer_size_ = static_cast<size_t>(end - buffer_);
         
         // Initialize header
         header_->magic = RING_BUFFER_MAGIC;
@@ -63,11 +73,19 @@ public:
         if (!memory || size < sizeof(RingBufferHeader) + event_size) {
             return false;
         }
-        
-        header_ = static_cast<RingBufferHeader*>(memory);
-        buffer_ = static_cast<uint8_t*>(memory) + sizeof(RingBufferHeader);
+        // Locate header at the next CACHE_LINE_SIZE boundary as created by initialize()
+        auto base = reinterpret_cast<uint8_t*>(memory);
+        auto end  = base + size;
+        auto aligned = reinterpret_cast<uint8_t*>(
+            (reinterpret_cast<uintptr_t>(base) + (CACHE_LINE_SIZE - 1)) & ~static_cast<uintptr_t>(CACHE_LINE_SIZE - 1)
+        );
+        if (aligned + sizeof(RingBufferHeader) + event_size > end) {
+            return false;
+        }
+        header_ = reinterpret_cast<RingBufferHeader*>(aligned);
+        buffer_ = aligned + sizeof(RingBufferHeader);
         event_size_ = event_size;
-        buffer_size_ = size - sizeof(RingBufferHeader);
+        buffer_size_ = static_cast<size_t>(end - buffer_);
         
         // Verify magic number to ensure it's a valid ring buffer
         if (header_->magic != RING_BUFFER_MAGIC) {

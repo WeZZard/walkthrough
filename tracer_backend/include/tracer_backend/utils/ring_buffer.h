@@ -13,9 +13,25 @@ extern "C" {
 typedef struct RingBuffer RingBuffer;
 
 // Create ring buffer (initializes header)
+//
+// Memory layout and alignment semantics:
+// - The RingBufferHeader is placed at the next CACHE_LINE_SIZE boundary within
+//   the provided [memory, memory + size) region to ensure that the producer
+//   and consumer fields (write_pos/read_pos) are 64-byte aligned and reside on
+//   distinct cache lines (to avoid false sharing).
+// - The payload buffer begins immediately after the header.
+// - The effective event capacity is computed from the remaining bytes after
+//   (aligned header + payload), rounded down to the nearest power of two.
+// - Callers should treat the provided region as opaque; do not assume the
+//   header starts exactly at the base address.
 RingBuffer* ring_buffer_create(void* memory, size_t size, size_t event_size);
 
 // Attach to existing ring buffer (does not initialize header)
+//
+// This function mirrors the alignment rule used by ring_buffer_create(): the
+// header is expected to be located at the next CACHE_LINE_SIZE boundary within
+// the provided region, with payload immediately after. The [memory, size]
+// region must be identical to or consistent with the one used at creation.
 RingBuffer* ring_buffer_attach(void* memory, size_t size, size_t event_size);
 
 // Producer operations

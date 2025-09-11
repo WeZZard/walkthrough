@@ -296,6 +296,8 @@ pub fn merge_lcov_files(lcov_files: &[PathBuf], output: &Path) -> Result<()> {
         std::fs::copy(existing_files[0], output)
             .context("Failed to copy LCOV file")?;
         println!("  Single LCOV file copied to: {}", output.display());
+        // Sanitize counts to ensure integers (avoid scientific notation edge cases)
+        sanitize_lcov_counts(output)?;
         return Ok(());
     }
     
@@ -326,6 +328,38 @@ pub fn merge_lcov_files(lcov_files: &[PathBuf], output: &Path) -> Result<()> {
         anyhow::bail!("lcov merge failed: {}", stderr);
     }
     
+    // Sanitize counts to ensure integers (avoid scientific notation from lcov merge)
+    sanitize_lcov_counts(output)?;
     println!("  Merged LCOV written to: {}", output.display());
+    Ok(())
+}
+
+/// Ensure DA line hit counts are integers (diff-cover expects ints, not scientific notation)
+fn sanitize_lcov_counts(path: &Path) -> Result<()> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read LCOV file {}", path.display()))?;
+    let mut out = String::with_capacity(content.len());
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("DA:") {
+            // Format: DA:<line>,<hits>
+            if let Some((ln_str, hits_str)) = rest.split_once(',') {
+                let hits_sanitized = if hits_str.contains('e') || hits_str.contains('E') {
+                    // Convert scientific notation to integer by truncation
+                    match hits_str.parse::<f64>() {
+                        Ok(v) if v.is_finite() && v >= 0.0 => format!("{}", v.trunc() as u64),
+                        _ => String::from("0"),
+                    }
+                } else {
+                    hits_str.trim().to_string()
+                };
+                out.push_str(&format!("DA:{},{}\n", ln_str.trim(), hits_sanitized));
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    std::fs::write(path, out)
+        .with_context(|| format!("Failed to write sanitized LCOV file {}", path.display()))?;
     Ok(())
 }
