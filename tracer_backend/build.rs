@@ -404,7 +404,7 @@ fn generate_gtest_wrappers(out_dir: &Path, predictable_dir: &Path, dst: &Path) -
             let filter = format!("{}.{}", suite, case);
 
             generated.push_str(&format!(
-                "#[test]\n#[serial_test::serial]\nfn {}() {{\n    run_gtest(\"{}\", \"{}\").expect(\"gtest failed\");\n}}\n\n",
+                "#[test]\n#[serial_test::serial]\n#[allow(non_snake_case)]\nfn {}() {{\n    run_gtest(\"{}\", \"{}\").expect(\"gtest failed\");\n}}\n\n",
                 fn_name,
                 bin_str.replace('\\', "\\\\"),
                 filter.replace('\\', "\\\\")
@@ -416,7 +416,7 @@ fn generate_gtest_wrappers(out_dir: &Path, predictable_dir: &Path, dst: &Path) -
     if total_cases > 0 {
         let mut f = fs::File::create(&out_file)?;
         f.write_all(generated.as_bytes())?;
-        println!("cargo:warning=Generated {} C++ gtest wrappers at {}", total_cases, out_file.display());
+        println!("cargo:info=Generated {} C++ gtest wrappers at {}", total_cases, out_file.display());
         // Expose a compile-time env var so Rust tests can skip the legacy aggregator
         println!("cargo:rustc-env=ADA_CPP_TESTS_GENERATED=1");
     } else {

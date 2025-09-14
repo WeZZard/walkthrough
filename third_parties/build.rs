@@ -21,7 +21,7 @@ fn main() {
         .define("CMAKE_BUILD_TYPE", build_type)
         .build();
     
-    println!("cargo:warning=Built Frida examples at: {}", dst.display());
+    println!("cargo:info=Built Frida examples at: {}", dst.display());
     
     // Copy to predictable location
     let target_base = Path::new(&out_dir)
@@ -45,10 +45,10 @@ fn main() {
             if let Err(e) = std::fs::copy(&src, &dst_file) {
                 println!("cargo:warning=Failed to copy {}: {}", src_path, e);
             } else {
-                println!("cargo:warning=Copied {} to {}", dst_name, dst_file.display());
+                println!("cargo:info=Copied {} to {}", dst_name, dst_file.display());
             }
         }
     }
     
-    println!("cargo:warning=Frida examples available at: {}", predictable_dir.display());
+    println!("cargo:info=Frida examples available at: {}", predictable_dir.display());
 }

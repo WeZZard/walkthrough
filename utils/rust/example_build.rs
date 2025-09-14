@@ -82,7 +82,7 @@ fn main() {
         std::fs::copy(&agent_src, &agent_dst)
             .expect("Failed to copy agent library");
         
-        println!("cargo:warning=Agent library copied to: {}", agent_dst.display());
+        println!("cargo:info=Agent library copied to: {}", agent_dst.display());
     }
 }
 
