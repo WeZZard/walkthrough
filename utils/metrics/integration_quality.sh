@@ -309,39 +309,127 @@ parse_build_errors_for_agent() {
 
 sign_test_binaries() {
     log_info "Signing test binaries (required on macOS)..."
-    
+
     if (is_ci || is_ssh) && [ -z "${APPLE_DEVELOPER_ID:-}" ]; then
         log_error "APPLE_DEVELOPER_ID not set - required for macOS development"
         deduct_points 100 "No Apple Developer certificate"
         return 1
     fi
-    
+
     local sign_count=0
     local sign_failures=0
-    
-    # Create temp file for counting (sh-compatible approach)
+    local failed_binaries=""
+
+    # Create temp files for counting and error tracking (sh-compatible approach)
     local count_file=$(mktemp)
+    local error_file=$(mktemp)
     echo "0 0" > "$count_file"
-    
-    find "${REPO_ROOT}/target" -name "test_*" -type f -perm +111 2>/dev/null | while IFS= read -r binary; do
+
+    # Use predictable paths from tracer_backend build.rs
+    # This avoids signing duplicate binaries in CMake build directories
+    local test_dirs=""
+
+    # Check both release and debug predictable test directories
+    # Build phase uses --release, but tests might be in debug too
+    local found_predictable=false
+
+    # Primary location: check release first (since build uses --release)
+    if [ -d "${REPO_ROOT}/target/release/tracer_backend/test" ]; then
+        test_dirs="${REPO_ROOT}/target/release/tracer_backend/test"
+        log_info "Using optimized path: target/release/tracer_backend/test/"
+        found_predictable=true
+    # Also check debug directory
+    elif [ -d "${REPO_ROOT}/target/debug/tracer_backend/test" ]; then
+        test_dirs="${REPO_ROOT}/target/debug/tracer_backend/test"
+        log_info "Using optimized path: target/debug/tracer_backend/test/"
+        found_predictable=true
+    fi
+
+    # Fallback: search entire target directory (slower, may find duplicates)
+    if [ "$found_predictable" = "false" ] || [ $(find $test_dirs -name "test_*" -type f -perm +111 2>/dev/null | wc -l | tr -d ' ') -eq 0 ]; then
+        if [ "$found_predictable" = "true" ]; then
+            log_info "Predictable test directory empty, falling back to full search"
+        else
+            log_info "Predictable test directory not found, falling back to full search"
+        fi
+        test_dirs="${REPO_ROOT}/target"
+    fi
+
+    # First count total binaries to sign
+    local total_binaries=$(find $test_dirs -name "test_*" -type f -perm +111 2>/dev/null | wc -l | tr -d ' ')
+
+    if [ "$total_binaries" -eq 0 ]; then
+        log_info "No test binaries found to sign"
+        rm -f "$count_file" "$error_file"
+        return 0
+    fi
+
+    log_info "Found $total_binaries test binaries to sign..."
+
+    find $test_dirs -name "test_*" -type f -perm +111 2>/dev/null | while IFS= read -r binary; do
         read sign_count sign_failures < "$count_file"
         sign_count=$((sign_count + 1))
-        if ! "${REPO_ROOT}/utils/sign_binary.sh" "$binary" &>/dev/null; then
-            sign_failures=$((sign_failures + 1))
+
+        # Show progress every 10 binaries or at specific percentages
+        if [ $((sign_count % 10)) -eq 0 ] || [ $((sign_count * 100 / total_binaries)) -gt $((((sign_count - 1) * 100 / total_binaries))) ]; then
+            printf "\r${BLUE}[SIGNING]${NC} Progress: %d/%d (%.0f%%) - Failures: %d" \
+                "$sign_count" "$total_binaries" \
+                "$((sign_count * 100 / total_binaries))" \
+                "$sign_failures" >&2
         fi
+
+        # Capture signing output for debugging
+        local sign_output=$("${REPO_ROOT}/utils/sign_binary.sh" "$binary" 2>&1)
+        local sign_result=$?
+
+        if [ $sign_result -ne 0 ]; then
+            sign_failures=$((sign_failures + 1))
+            # Store error details
+            echo "FAILED: $(basename "$binary")" >> "$error_file"
+            echo "  Path: $binary" >> "$error_file"
+            echo "  Error: $sign_output" | head -5 >> "$error_file"
+            echo "---" >> "$error_file"
+        fi
+
         echo "$sign_count $sign_failures" > "$count_file"
     done
-    
+
+    # Clear progress line
+    printf "\r%80s\r" " " >&2
+
     # Read final counts
     read sign_count sign_failures < "$count_file"
-    rm -f "$count_file"
-    
+
     if [ "$sign_failures" -gt 0 ]; then
+        log_error "Failed to sign $sign_failures out of $sign_count binaries"
+
+        # Show detailed error report
+        if [ -f "$error_file" ] && [ -s "$error_file" ]; then
+            echo "" >&2
+            echo "${RED}=== Signing Failure Report ===${NC}" >&2
+            cat "$error_file" >&2
+            echo "${RED}==============================${NC}" >&2
+
+            # Provide helpful suggestions based on common errors
+            if grep -q "Developer ID" "$error_file" 2>/dev/null; then
+                echo "" >&2
+                echo "${YELLOW}Suggestion: Set APPLE_DEVELOPER_ID environment variable${NC}" >&2
+                echo "  export APPLE_DEVELOPER_ID='Developer ID Application: Your Name'" >&2
+            fi
+            if grep -q "no identity found" "$error_file" 2>/dev/null; then
+                echo "" >&2
+                echo "${YELLOW}Suggestion: Check available certificates with:${NC}" >&2
+                echo "  security find-identity -v -p codesigning" >&2
+            fi
+        fi
+
+        rm -f "$count_file" "$error_file"
         deduct_points 100 "Binary signing failed"
         return 1
     fi
-    
-    [ "$sign_count" -gt 0 ] && log_success "Signed $sign_count test binaries"
+
+    rm -f "$count_file" "$error_file"
+    log_success "Successfully signed all $sign_count test binaries"
     return 0
 }
 

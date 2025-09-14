@@ -80,28 +80,43 @@ EOF
             codesign --remove-signature "$BINARY_PATH" 2>/dev/null || true
             
             # Try signing in place first
-            if codesign --force \
+            SIGN_OUTPUT=$(codesign --force \
                      --sign "$DEVELOPER_ID" \
                      --entitlements "$ENTITLEMENTS_FILE" \
-                     "$BINARY_PATH" 2>&1; then
+                     "$BINARY_PATH" 2>&1)
+            SIGN_RESULT=$?
+
+            if [ $SIGN_RESULT -eq 0 ]; then
                 echo -e "${GREEN}✅ Binary signed with Developer ID certificate${NC}"
             else
                 # If in-place signing fails (common in build directories), try temp location
                 echo -e "${YELLOW}In-place signing failed, trying temp location workaround${NC}"
+                echo -e "${YELLOW}Error: $SIGN_OUTPUT${NC}" >&2
+
                 TEMP_BINARY="/tmp/$(basename "$BINARY_PATH")_$$"
                 cp "$BINARY_PATH" "$TEMP_BINARY"
-                
+
                 # Remove any existing signature on the copy
                 codesign --remove-signature "$TEMP_BINARY" 2>/dev/null || true
-                
-                if codesign --force \
+
+                SIGN_OUTPUT=$(codesign --force \
                          --sign "$DEVELOPER_ID" \
                          --entitlements "$ENTITLEMENTS_FILE" \
-                         "$TEMP_BINARY" 2>&1; then
+                         "$TEMP_BINARY" 2>&1)
+                SIGN_RESULT=$?
+
+                if [ $SIGN_RESULT -eq 0 ]; then
                     # Move signed binary back
                     mv "$TEMP_BINARY" "$BINARY_PATH"
                     echo -e "${GREEN}✅ Binary signed via temp location workaround${NC}"
                 else
+                    echo -e "${RED}ERROR: Failed to sign binary: $(basename "$BINARY_PATH")${NC}" >&2
+                    echo -e "${RED}Signing error: $SIGN_OUTPUT${NC}" >&2
+                    echo -e "${YELLOW}Troubleshooting:${NC}" >&2
+                    echo "  1. Check certificate: security find-identity -v -p codesigning" >&2
+                    echo "  2. Verify certificate name matches: '$DEVELOPER_ID'" >&2
+                    echo "  3. Check certificate validity: security find-certificate -c '$DEVELOPER_ID'" >&2
+                    rm -f "$TEMP_BINARY"
                     exit 1
                 fi
             fi
@@ -123,14 +138,45 @@ EOF
             # Local session, use ad-hoc signing with entitlements
             echo "Using ad-hoc signing for local testing"
             codesign --remove-signature "$BINARY_PATH" 2>/dev/null || true
-            if codesign --force \
+
+            SIGN_OUTPUT=$(codesign --force \
                      --sign - \
                      --entitlements "$ENTITLEMENTS_FILE" \
-                     "$BINARY_PATH" 2>&1; then
+                     "$BINARY_PATH" 2>&1)
+            SIGN_RESULT=$?
+
+            if [ $SIGN_RESULT -eq 0 ]; then
                 echo -e "${GREEN}✅ Binary ad-hoc signed with entitlements${NC}"
             else
-                echo -e "${RED}Ad-hoc signing failed${NC}"
-                exit 1
+                echo -e "${RED}ERROR: Ad-hoc signing failed for: $(basename "$BINARY_PATH")${NC}" >&2
+                echo -e "${RED}Error: $SIGN_OUTPUT${NC}" >&2
+
+                # Try temp location workaround for ad-hoc signing too
+                echo -e "${YELLOW}Trying temp location workaround for ad-hoc signing...${NC}" >&2
+                TEMP_BINARY="/tmp/$(basename "$BINARY_PATH")_$$"
+                cp "$BINARY_PATH" "$TEMP_BINARY"
+
+                codesign --remove-signature "$TEMP_BINARY" 2>/dev/null || true
+
+                SIGN_OUTPUT=$(codesign --force \
+                         --sign - \
+                         --entitlements "$ENTITLEMENTS_FILE" \
+                         "$TEMP_BINARY" 2>&1)
+                SIGN_RESULT=$?
+
+                if [ $SIGN_RESULT -eq 0 ]; then
+                    mv "$TEMP_BINARY" "$BINARY_PATH"
+                    echo -e "${GREEN}✅ Binary ad-hoc signed via temp location workaround${NC}"
+                else
+                    echo -e "${RED}ERROR: Ad-hoc signing failed even with workaround${NC}" >&2
+                    echo -e "${RED}Error: $SIGN_OUTPUT${NC}" >&2
+                    echo -e "${YELLOW}Common causes:${NC}" >&2
+                    echo "  1. Binary might be corrupted or not a valid Mach-O file" >&2
+                    echo "  2. Insufficient permissions on the binary" >&2
+                    echo "  3. System Integrity Protection (SIP) might be interfering" >&2
+                    rm -f "$TEMP_BINARY"
+                    exit 1
+                fi
             fi
         fi
         
