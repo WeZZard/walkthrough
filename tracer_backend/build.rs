@@ -172,11 +172,33 @@ fn main() {
         ("build/test_thread_registry", "test/test_thread_registry"),
         ("build/tests/unit/utils/test_thread_registry", "test/test_thread_registry"),
         ("out/bin/test_thread_registry", "test/test_thread_registry"),
+        ("build/test_control_block_ipc", "test/test_control_block_ipc"),
+        ("build/tests/unit/utils/test_control_block_ipc", "test/test_control_block_ipc"),
+        ("out/bin/test_control_block_ipc", "test/test_control_block_ipc"),
         // Note: test_thread_registry_cpp is not built; entries removed
         // Controller unit tests
         ("build/test_spawn_method", "test/test_spawn_method"),
         ("build/tests/unit/controller/test_spawn_method", "test/test_spawn_method"),
         ("out/bin/test_spawn_method", "test/test_spawn_method"),
+        ("build/test_controller_heartbeat", "test/test_controller_heartbeat"),
+        ("build/tests/unit/controller/test_controller_heartbeat", "test/test_controller_heartbeat"),
+        ("out/bin/test_controller_heartbeat", "test/test_controller_heartbeat"),
+        ("build/test_controller_env_propagation", "test/test_controller_env_propagation"),
+        ("build/tests/unit/controller/test_controller_env_propagation", "test/test_controller_env_propagation"),
+        ("out/bin/test_controller_env_propagation", "test/test_controller_env_propagation"),
+        ("build/test_controller_coverage", "test/test_controller_coverage"),
+        ("build/tests/unit/controller/test_controller_coverage", "test/test_controller_coverage"),
+        ("out/bin/test_controller_coverage", "test/test_controller_coverage"),
+        // Agent unit tests
+        ("build/test_agent_state_machine", "test/test_agent_state_machine"),
+        ("build/tests/unit/agent/test_agent_state_machine", "test/test_agent_state_machine"),
+        ("out/bin/test_agent_state_machine", "test/test_agent_state_machine"),
+        ("build/test_agent_coverage", "test/test_agent_coverage"),
+        ("build/tests/unit/agent/test_agent_coverage", "test/test_agent_coverage"),
+        ("out/bin/test_agent_coverage", "test/test_agent_coverage"),
+        ("build/test_agent_mode_tick", "test/test_agent_mode_tick"),
+        ("build/tests/unit/agent/test_agent_mode_tick", "test/test_agent_mode_tick"),
+        ("out/bin/test_agent_mode_tick", "test/test_agent_mode_tick"),
         // Utils integration tests
         ("build/test_thread_registry_integration", "test/test_thread_registry_integration"),
         ("build/tests/integration/utils/test_thread_registry_integration", "test/test_thread_registry_integration"),
@@ -188,6 +210,9 @@ fn main() {
         ("build/test_integration", "test/test_integration"),
         ("build/tests/integration/controller/test_integration", "test/test_integration"),
         ("out/bin/test_integration", "test/test_integration"),
+        ("build/test_registry_lifecycle", "test/test_registry_lifecycle"),
+        ("build/tests/integration/controller/test_registry_lifecycle", "test/test_registry_lifecycle"),
+        ("out/bin/test_registry_lifecycle", "test/test_registry_lifecycle"),
         // Agent integration tests
         ("build/test_agent_loader", "test/test_agent_loader"),
         ("build/tests/integration/agent/test_agent_loader", "test/test_agent_loader"),
@@ -195,6 +220,13 @@ fn main() {
         ("build/test_baseline_hooks", "test/test_baseline_hooks"),
         ("build/tests/integration/agent/test_baseline_hooks", "test/test_baseline_hooks"),
         ("out/bin/test_baseline_hooks", "test/test_baseline_hooks"),
+        ("build/test_agent_registry_modes", "test/test_agent_registry_modes"),
+        ("build/tests/integration/agent/test_agent_registry_modes", "test/test_agent_registry_modes"),
+        ("out/bin/test_agent_registry_modes", "test/test_agent_registry_modes"),
+        // Registry benchmark tests
+        ("build/test_registry_bench", "test/test_registry_bench"),
+        ("build/tests/bench/registry/test_registry_bench", "test/test_registry_bench"),
+        ("out/bin/test_registry_bench", "test/test_registry_bench"),
     ];
     
     for (src_path, dst_path) in binaries {

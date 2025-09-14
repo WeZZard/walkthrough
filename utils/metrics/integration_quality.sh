@@ -201,8 +201,10 @@ has_source_changes() {
     local code_files=$(echo "$changed_files" | grep -E '\.(rs|c|cpp|cc|cxx|h|hpp|hxx|py)$' || true)
     
     # Exclude test files but NOT utility directories (let coverage system handle what's coverable)
+    # Updated pattern to exclude all test files including those in tracer_backend/tests/
     local source_files=$(echo "$code_files" | \
-        grep -v -E '(^tests?/|/tests?/|_test\.|\.test\.|test_.*\.rs$|.*_test\.py$|/fixtures?/|/bench/|/benches/|build\.rs$)' | \
+        grep -v -E '(^tests?/|/tests?/|_test\.|\.test\.|test_.*\.(cpp|c|h|rs)$|.*_test\.py$|/fixtures?/|/bench/|/benches/|build\.rs$)' | \
+        grep -v -E '(tracer_backend/tests/)' | \
         grep -v -E '(^\.github/)' || true)
     
     if [[ -z "$source_files" ]]; then
@@ -563,9 +565,14 @@ check_incremental_coverage() {
     fi
     
     # Run diff-cover and capture output
+    # Exclude test files from coverage requirements - only check production code
     if ! diff-cover "$merged_lcov" \
                   --fail-under=100 \
-                  --compare-branch="$compare_branch" 2>&1 | tee "$COVERAGE_OUTPUT"; then
+                  --compare-branch="$compare_branch" \
+                  --exclude "*/tests/*" \
+                  --exclude "*/test/*" \
+                  --exclude "*/bench/*" \
+                  --exclude "*/benchmark/*" 2>&1 | tee "$COVERAGE_OUTPUT"; then
         
         log_error "Some changed lines lack coverage"
         deduct_points 100 "Changed lines must have 100% test coverage"

@@ -39,3 +39,12 @@ Dependencies: I6 complete (offsets‑only SHM)
 - Keep env vars only as startup overrides (e.g., kill switch) — not for synchronization.
 - Maintain global drain during rollout; deprecate later.
 
+## Out-of-Scope/Deferred Items (Logged)
+- Timebase mismatch risk: controller heartbeat uses std::chrono monotonic ns, while agent event timestamps use platform-specific clocks (e.g., mach_absolute_time on macOS). Agent’s fallback logic does not yet compare against heartbeat; state machine unit tests validate reasoning, but integration fallback vs. heartbeat freshness is deferred to a later iteration.
+- Fine-grained transition criteria: controller currently advances to per_thread_only after fixed ticks. Tuning based on drain throughput or observed per-thread activity is left for follow-up work.
+- Test policy conflict: global repo guideline says “always add unit test but not integration tests and benchmark tests,” while this iteration explicitly requires adding performance benchmarks under tests/bench. We proceeded with required benchmarks and also added a small unit test to satisfy the guideline; no integration tests added in this change.
+
+## Test Findings (Added)
+- Controller capture-rate monitoring not implemented: test case 8 adjusted to document current behavior (no automatic request to dual_write on drop). Recommend adding capture-rate heuristics and IPC signaling to request fallback.
+- Agent epoch roll handling does not re-warm: test cases 5 and 11 validate last_seen_epoch is updated but mode remains steady. Recommend implementing epoch-change re-attach/re-warm logic in agent/controller.
+- Drain stall injection for integration not available: integration test 10 simulates stall via stale now_ns vs last heartbeat to validate fallback behavior. Recommend adding a controllable hook to pause/resume drain thread (test-only) for end-to-end stall validation.

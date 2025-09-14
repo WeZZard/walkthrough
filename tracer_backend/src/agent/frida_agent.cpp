@@ -132,7 +132,13 @@ AgentContext::AgentContext()
     , module_base_(0)
     , events_emitted_(0)
     , reentrancy_blocked_(0)
-    , stack_capture_failures_(0) {
+    , stack_capture_failures_(0)
+    , agent_mode_state_{} {
+    // Initialize agent mode to GLOBAL_ONLY by default
+    agent_mode_state_.mode = REGISTRY_MODE_GLOBAL_ONLY;
+    agent_mode_state_.transitions = 0;
+    agent_mode_state_.fallbacks = 0;
+    agent_mode_state_.last_seen_epoch = 0;
 }
 
 AgentContext::~AgentContext() {
@@ -201,6 +207,11 @@ bool AgentContext::open_shared_memory() {
     // Map control block
     control_block_ = static_cast<ControlBlock*>(shm_control_.get_address());
     if (ada::internal::g_agent_verbose) g_debug("[Agent] Control block mapped at %p\n", control_block_);
+
+    // Initialize registry_mode to our current state
+    if (control_block_) {
+        __atomic_store_n(&control_block_->registry_mode, agent_mode_state_.mode, __ATOMIC_RELEASE);
+    }
 
     // Try to open and attach to thread registry (optional, can be disabled by env)
     bool disable_registry = false;
@@ -340,6 +351,18 @@ void AgentContext::send_hook_summary() {
                 static_cast<unsigned long long>(result.address), 
                 result.id,
                 result.success ? "hooked" : "failed");
+    }
+}
+
+// Update registry_mode via AgentModeState state machine
+void AgentContext::update_registry_mode(uint64_t now_ns, uint64_t hb_timeout_ns) {
+    if (!control_block_) return;
+    AgentModeState before = agent_mode_state_;
+    agent_mode_tick(&agent_mode_state_, control_block_, now_ns, hb_timeout_ns);
+    if (before.mode != agent_mode_state_.mode) {
+        __atomic_store_n(&control_block_->registry_mode, agent_mode_state_.mode, __ATOMIC_RELEASE);
+        // Best-effort visibility for transitions (optional)
+        __atomic_fetch_add(&control_block_->mode_transitions, (uint64_t)1, __ATOMIC_RELAXED);
     }
 }
 
@@ -549,13 +572,12 @@ static void capture_index_event(AgentContext* ctx, HookData* hook,
     event.call_depth = tls->call_depth();
     event._padding = 0;
     
-    // Prefer per-thread registry rings only if enabled via env gate
-    static bool enable_registry_rings = [](){
-        const char* e = getenv("ADA_ENABLE_REGISTRY_RINGS");
-        return e && e[0] != '\0' && e[0] != '0';
-    }();
-    ::RingBuffer* target_rb = reinterpret_cast<::RingBuffer*>(ctx->index_ring());
-    if (enable_registry_rings) {
+    // Determine operating mode
+    uint32_t mode = __atomic_load_n(&ctx->control_block()->registry_mode, __ATOMIC_ACQUIRE);
+    bool wrote = false;
+    bool wrote_pt = false;
+    // Attempt per-thread path if allowed by mode
+    if (mode == REGISTRY_MODE_DUAL_WRITE || mode == REGISTRY_MODE_PER_THREAD_ONLY) {
         ThreadLaneSet* lanes = ada_get_thread_lane();
         if (lanes) {
             Lane* idx_lane = thread_lanes_get_index_lane(lanes);
@@ -563,25 +585,31 @@ static void capture_index_event(AgentContext* ctx, HookData* hook,
             if (reg) {
                 RingBufferHeader* hdr = thread_registry_get_active_ring_header(reg, idx_lane);
                 if (hdr) {
-                    bool wrote = ring_buffer_write_raw(hdr, sizeof(IndexEvent), &event);
-                    if (wrote) {
-                        g_debug("[Agent] Wrote index event (raw)\n");
+                    wrote_pt = ring_buffer_write_raw(hdr, sizeof(IndexEvent), &event);
+                    if (wrote_pt) {
+                        g_debug("[Agent] Wrote index event (per-thread)\n");
                         ctx->increment_events_emitted();
-                    } else {
-                        g_debug("[Agent] Failed to write index event (raw)\n");
                     }
-                    // Mirror to process-global ring for compatibility
-                    if (ctx->index_ring()) {
-                        ::RingBuffer* grb = reinterpret_cast<::RingBuffer*>(ctx->index_ring());
-                        (void)ring_buffer_write(grb, &event);
-                    }
-                    return;
                 }
             }
         }
     }
 
-    bool wrote = ring_buffer_write(target_rb, &event);
+    // If dual-write, always mirror to process-global
+    if (mode == REGISTRY_MODE_DUAL_WRITE) {
+        ::RingBuffer* grb = reinterpret_cast<::RingBuffer*>(ctx->index_ring());
+        wrote = ring_buffer_write(grb, &event);
+    } else if (mode == REGISTRY_MODE_GLOBAL_ONLY || (mode == REGISTRY_MODE_PER_THREAD_ONLY && !wrote_pt)) {
+        // Either global-only, or per-thread-only failed -> fallback
+        ::RingBuffer* grb = reinterpret_cast<::RingBuffer*>(ctx->index_ring());
+        wrote = ring_buffer_write(grb, &event);
+        if (mode == REGISTRY_MODE_PER_THREAD_ONLY && !wrote_pt) {
+            // Best-effort visibility: bump fallback counter when available
+            __atomic_fetch_add(&ctx->control_block()->fallback_events, (uint64_t)1, __ATOMIC_RELAXED);
+        }
+    } else {
+        wrote = wrote_pt;
+    }
     if (wrote) {
         g_debug("[Agent] Wrote index event\n");
         ctx->increment_events_emitted();
@@ -656,13 +684,11 @@ static void capture_detail_event(AgentContext* ctx, HookData* hook,
         }
     }
     
-    // Prefer per-thread registry rings only if enabled via env gate
-    static bool enable_registry_rings = [](){
-        const char* e = getenv("ADA_ENABLE_REGISTRY_RINGS");
-        return e && e[0] != '\0' && e[0] != '0';
-    }();
-    ::RingBuffer* target_rb = reinterpret_cast<::RingBuffer*>(ctx->detail_ring());
-    if (enable_registry_rings) {
+    // Determine operating mode
+    uint32_t mode = __atomic_load_n(&ctx->control_block()->registry_mode, __ATOMIC_ACQUIRE);
+    bool wrote = false;
+    bool wrote_pt = false;
+    if (mode == REGISTRY_MODE_DUAL_WRITE || mode == REGISTRY_MODE_PER_THREAD_ONLY) {
         ThreadLaneSet* lanes = ada_get_thread_lane();
         if (lanes) {
             Lane* det_lane = thread_lanes_get_detail_lane(lanes);
@@ -670,25 +696,28 @@ static void capture_detail_event(AgentContext* ctx, HookData* hook,
             if (reg) {
                 RingBufferHeader* hdr = thread_registry_get_active_ring_header(reg, det_lane);
                 if (hdr) {
-                    bool wrote = ring_buffer_write_raw(hdr, sizeof(DetailEvent), &detail);
-                    if (wrote) {
-                        g_debug("[Agent] Wrote detail event (raw)\n");
+                    wrote_pt = ring_buffer_write_raw(hdr, sizeof(DetailEvent), &detail);
+                    if (wrote_pt) {
+                        g_debug("[Agent] Wrote detail event (per-thread)\n");
                         ctx->increment_events_emitted();
-                    } else {
-                        g_debug("[Agent] Failed to write detail event (raw)\n");
                     }
-                    // Mirror to process-global detail ring for compatibility
-                    if (ctx->detail_ring()) {
-                        ::RingBuffer* grb = reinterpret_cast<::RingBuffer*>(ctx->detail_ring());
-                        (void)ring_buffer_write(grb, &detail);
-                    }
-                    return;
                 }
             }
         }
     }
 
-    bool wrote = ring_buffer_write(target_rb, &detail);
+    if (mode == REGISTRY_MODE_DUAL_WRITE) {
+        ::RingBuffer* grb = reinterpret_cast<::RingBuffer*>(ctx->detail_ring());
+        wrote = ring_buffer_write(grb, &detail);
+    } else if (mode == REGISTRY_MODE_GLOBAL_ONLY || (mode == REGISTRY_MODE_PER_THREAD_ONLY && !wrote_pt)) {
+        ::RingBuffer* grb = reinterpret_cast<::RingBuffer*>(ctx->detail_ring());
+        wrote = ring_buffer_write(grb, &detail);
+        if (mode == REGISTRY_MODE_PER_THREAD_ONLY && !wrote_pt) {
+            __atomic_fetch_add(&ctx->control_block()->fallback_events, (uint64_t)1, __ATOMIC_RELAXED);
+        }
+    } else {
+        wrote = wrote_pt;
+    }
     if (wrote) {
         g_debug("[Agent] Wrote detail event\n");
         ctx->increment_events_emitted();
@@ -716,6 +745,11 @@ void on_enter_callback(GumInvocationContext* ic, gpointer user_data) {
     
     if (ada::internal::g_agent_verbose) g_debug("[Agent] on_enter: %s\n", hook->function_name.c_str());
     
+    // Tick agent mode state machine before captures
+    const uint64_t now_ns = platform_get_timestamp();
+    const uint64_t hb_timeout_ns = 500000000ull; // 500 ms
+    ctx->update_registry_mode(now_ns, hb_timeout_ns);
+
     // Increment call depth
     tls->increment_depth();
     
@@ -744,6 +778,11 @@ void on_leave_callback(GumInvocationContext* ic, gpointer user_data) {
     
     if (ada::internal::g_agent_verbose) g_debug("[Agent] on_leave: %s\n", hook->function_name.c_str());
     
+    // Tick agent mode state machine before captures
+    const uint64_t now_ns = platform_get_timestamp();
+    const uint64_t hb_timeout_ns = 500000000ull; // 500 ms
+    ctx->update_registry_mode(now_ns, hb_timeout_ns);
+
     // Capture index event
     capture_index_event(ctx, hook, tls, EVENT_KIND_RETURN);
     

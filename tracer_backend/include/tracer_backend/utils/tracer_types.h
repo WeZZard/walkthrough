@@ -39,6 +39,13 @@ typedef enum {
     PROCESS_STATE_FAILED
 } ProcessState;
 
+// Registry/Agent operating mode
+typedef enum {
+    REGISTRY_MODE_GLOBAL_ONLY = 0,
+    REGISTRY_MODE_DUAL_WRITE = 1,
+    REGISTRY_MODE_PER_THREAD_ONLY = 2
+} RegistryMode;
+
 // Flight recorder state
 typedef enum {
     FLIGHT_RECORDER_IDLE = 0,
@@ -125,7 +132,21 @@ typedef struct {
     uint32_t index_lane_enabled;
     uint32_t detail_lane_enabled;
     uint32_t capture_stack_snapshot;  // Enable 128-byte stack capture
-    uint32_t _reserved[7];  // Reserved for future flags
+
+    // --- IPC fields for registry/agent coordination ---
+    // All fields below must be accessed with atomic operations (release/acquire)
+    uint32_t registry_ready;        // Controller sets to 1 when registry is ready
+    uint32_t registry_version;      // Registry protocol version
+    uint32_t registry_epoch;        // Current registry epoch
+    uint32_t registry_mode;         // See RegistryMode
+    uint64_t drain_heartbeat_ns;    // Monotonic heartbeat from controller drain thread
+
+    // Observability counters (best-effort)
+    uint64_t mode_transitions;      // Number of mode transitions observed (agent/controller)
+    uint64_t fallback_events;       // Number of fallbacks to global-only path
+
+    // Reserved for future flags/fields
+    uint32_t _reserved[1];
 } ControlBlock;
 
 // Statistics

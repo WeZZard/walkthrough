@@ -135,6 +135,7 @@ private:
     // Drain thread
     std::unique_ptr<std::thread> drain_thread_;
     std::atomic<bool> drain_running_{false};
+    uint32_t drain_ticks_{0};
     
     // Output
     FILE* output_file_{nullptr};

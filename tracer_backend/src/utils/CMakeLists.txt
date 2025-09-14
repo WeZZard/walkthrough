@@ -8,6 +8,7 @@ set(UTILS_SOURCES
     ring_buffer.cpp
     thread_registry.cpp
     ada_thread.c
+    agent_mode.cpp
 )
 
 # Create static library

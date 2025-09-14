@@ -15,6 +15,8 @@ extern "C" {
 #include <frida-gum.h>
 // ADA TLS API
 #include <tracer_backend/ada/thread.h>
+// Agent mode state machine (C API)
+#include <tracer_backend/utils/agent_mode.h>
 }
 
 // Forward declarations for C++ classes
@@ -159,6 +161,9 @@ public:
     uint32_t hooks_attempted() const { return num_hooks_attempted_; }
     uint32_t hooks_successful() const { return num_hooks_successful_; }
 
+    // Agent mode state machine tick
+    void update_registry_mode(uint64_t now_ns, uint64_t hb_timeout_ns);
+
 private:
     // Shared memory segments
     SharedMemoryRef shm_control_;
@@ -191,6 +196,9 @@ private:
     std::atomic<uint64_t> events_emitted_;
     std::atomic<uint64_t> reentrancy_blocked_;
     std::atomic<uint64_t> stack_capture_failures_;
+
+    // Agent mode state machine
+    AgentModeState agent_mode_state_;
     
     // Helper methods
     bool open_shared_memory();

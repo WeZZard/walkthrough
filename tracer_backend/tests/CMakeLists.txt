@@ -71,6 +71,7 @@ add_subdirectory(integration/agent)
 add_subdirectory(bench/utils)
 add_subdirectory(bench/controller)
 add_subdirectory(bench/agent)
+add_subdirectory(bench/registry)
 
 # ===========================================
 # Custom Targets for Running Tests

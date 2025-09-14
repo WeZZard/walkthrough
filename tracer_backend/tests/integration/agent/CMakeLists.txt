@@ -51,6 +51,28 @@ if(FRIDA_CORE_TEST)
             tracer_utils
             Threads::Threads
     )
+
+    # Registry mode handling tests
+    add_executable(test_agent_registry_modes
+        test_agent_registry_modes.cpp
+    )
+    target_include_directories(test_agent_registry_modes
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/../third_parties/frida-core
+            ${CMAKE_SOURCE_DIR}/../third_parties/frida-gum
+            ${CMAKE_BINARY_DIR}  # For ada_paths.h
+    )
+    target_link_libraries(test_agent_registry_modes
+        PRIVATE
+            test_main
+            GTest::gtest
+            GTest::gmock
+            tracer_controller
+            frida_agent
+            tracer_utils
+            Threads::Threads
+    )
     
     # Test Discovery
     gtest_discover_tests(test_agent_loader
@@ -65,11 +87,18 @@ if(FRIDA_CORE_TEST)
         DISCOVERY_TIMEOUT 60
         PROPERTIES LABELS "integration"
     )
+    gtest_discover_tests(test_agent_registry_modes
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DISCOVERY_MODE PRE_TEST
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "integration"
+    )
     
     # Install targets
     install(TARGETS
         test_agent_loader
         test_baseline_hooks
+        test_agent_registry_modes
         RUNTIME DESTINATION bin
     )
 endif()

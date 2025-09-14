@@ -43,4 +43,100 @@ if(FRIDA_CORE_TEST)
         test_spawn_method
         RUNTIME DESTINATION bin
     )
+
+    # Heartbeat/unit controller behaviors
+    add_executable(test_controller_heartbeat
+        test_controller_heartbeat.cpp
+    )
+    target_include_directories(test_controller_heartbeat
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/../third_parties/frida-core
+            ${CMAKE_BINARY_DIR}  # For ada_paths.h
+    )
+    target_link_libraries(test_controller_heartbeat
+        PRIVATE
+            test_main
+            GTest::gtest
+            GTest::gmock
+            tracer_controller
+            tracer_utils
+            Threads::Threads
+    )
+
+    gtest_discover_tests(test_controller_heartbeat
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DISCOVERY_MODE PRE_TEST
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "unit"
+    )
+
+    install(TARGETS
+        test_controller_heartbeat
+        RUNTIME DESTINATION bin
+    )
+
+    # Environment propagation test
+    add_executable(test_controller_env_propagation
+        test_controller_env_propagation.cpp
+    )
+    target_include_directories(test_controller_env_propagation
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/../third_parties/frida-core
+            ${CMAKE_BINARY_DIR}  # For ada_paths.h
+    )
+    target_link_libraries(test_controller_env_propagation
+        PRIVATE
+            test_main
+            GTest::gtest
+            GTest::gmock
+            tracer_controller
+            tracer_utils
+            Threads::Threads
+    )
+
+    gtest_discover_tests(test_controller_env_propagation
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DISCOVERY_MODE PRE_TEST
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "unit"
+    )
+
+    install(TARGETS
+        test_controller_env_propagation
+        RUNTIME DESTINATION bin
+    )
+
+    # Controller coverage test
+    add_executable(test_controller_coverage
+        test_controller_coverage.cpp
+    )
+    target_include_directories(test_controller_coverage
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/../third_parties/frida-core
+            ${CMAKE_BINARY_DIR}  # For ada_paths.h
+    )
+    target_link_libraries(test_controller_coverage
+        PRIVATE
+            test_main
+            GTest::gtest
+            GTest::gmock
+            tracer_controller
+            tracer_utils
+            Threads::Threads
+    )
+
+    gtest_discover_tests(test_controller_coverage
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DISCOVERY_MODE PRE_TEST
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "unit"
+    )
+
+    install(TARGETS
+        test_controller_coverage
+        RUNTIME DESTINATION bin
+    )
 endif()

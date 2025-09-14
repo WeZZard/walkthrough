@@ -1,6 +1,9 @@
 #include "frida_controller_internal.h"
 #include "../utils/ring_buffer_private.h"
 extern "C" {
+#include <tracer_backend/utils/control_block_ipc.h>
+}
+extern "C" {
 #include <tracer_backend/utils/ring_buffer.h>
 }
 #include "../utils/thread_registry_private.h"
@@ -11,9 +14,11 @@ extern "C" {
 #include <unistd.h>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 #ifdef __APPLE__
 #include <crt_externs.h>
+#include <mach/mach_time.h>
 #define environ (*_NSGetEnviron())
 #else
 extern char **environ;
@@ -199,6 +204,12 @@ bool FridaController::initialize_shared_memory() {
     control_block_->detail_lane_enabled = 1;
     control_block_->pre_roll_ms = 1000;
     control_block_->post_roll_ms = 1000;
+    // Init IPC fields to defaults
+    cb_set_registry_ready(control_block_, 0);
+    cb_set_registry_version(control_block_, 0);
+    cb_set_registry_epoch(control_block_, 0);
+    cb_set_registry_mode(control_block_, REGISTRY_MODE_GLOBAL_ONLY);
+    cb_set_heartbeat_ns(control_block_, 0);
 
     // Optional: allow disabling registry via env (verification / fallback)
     bool disable_registry = false;
@@ -225,6 +236,12 @@ bool FridaController::initialize_shared_memory() {
             g_debug("Failed to initialize thread registry at %p (size=%zu)\n", reg_addr, registry_size);
             return false;
         }
+        // Publish registry IPC readiness
+        cb_set_registry_version(control_block_, 1);
+        cb_set_registry_epoch(control_block_, 1);
+        cb_set_registry_ready(control_block_, 1);
+        // Begin with dual-write to warm up, then controller will transition later
+        cb_set_registry_mode(control_block_, REGISTRY_MODE_DUAL_WRITE);
     } else {
         g_debug("Registry disabled by ADA_DISABLE_REGISTRY\n");
     }
@@ -315,26 +332,48 @@ int FridaController::spawn_suspended(const char* path, char* const argv[], uint3
     // Build environment
     std::string ada_session = std::string("ADA_SHM_SESSION_ID=") + sid_hex;
     std::string ada_host = std::string("ADA_SHM_HOST_PID=") + host_pid_str;
-    
-    const char* envp[] = {
-        g_strdup_printf("PATH=%s", g_getenv("PATH")),
-        g_strdup_printf("HOME=%s", g_get_home_dir()),
-        g_strdup_printf("__CF_USER_TEXT_ENCODING=%s", 
-                       g_getenv("__CF_USER_TEXT_ENCODING") ?: "0x1F5:0x0:0x0"),
-        ada_session.c_str(),
-        ada_host.c_str(),
-        nullptr
-    };
-    frida_spawn_options_set_envp(options, const_cast<gchar**>(envp), 5);
+
+    // Propagate LLVM_PROFILE_FILE for coverage collection in child processes
+    const char* llvm_profile = g_getenv("LLVM_PROFILE_FILE");
+    std::string llvm_profile_str;
+    if (llvm_profile) {
+        llvm_profile_str = std::string("LLVM_PROFILE_FILE=") + llvm_profile;
+    }
+
+    // Build envp array dynamically
+    std::vector<const char*> envp_vec;
+    envp_vec.push_back(g_strdup_printf("PATH=%s", g_getenv("PATH")));
+    envp_vec.push_back(g_strdup_printf("HOME=%s", g_get_home_dir()));
+    envp_vec.push_back(g_strdup_printf("__CF_USER_TEXT_ENCODING=%s",
+                       g_getenv("__CF_USER_TEXT_ENCODING") ?: "0x1F5:0x0:0x0"));
+    envp_vec.push_back(ada_session.c_str());
+    envp_vec.push_back(ada_host.c_str());
+
+    // Add LLVM_PROFILE_FILE if present
+    if (!llvm_profile_str.empty()) {
+        envp_vec.push_back(llvm_profile_str.c_str());
+    }
+
+    // Also propagate other coverage-related variables
+    const char* rust_cov = g_getenv("RUSTFLAGS");
+    std::string rust_cov_str;
+    if (rust_cov && strstr(rust_cov, "instrument-coverage")) {
+        rust_cov_str = std::string("RUSTFLAGS=") + rust_cov;
+        envp_vec.push_back(rust_cov_str.c_str());
+    }
+
+    envp_vec.push_back(nullptr);
+
+    frida_spawn_options_set_envp(options, const_cast<gchar**>(envp_vec.data()), envp_vec.size() - 1);
     frida_spawn_options_set_stdio(options, FRIDA_STDIO_INHERIT);
-    
+
     // Spawn suspended
     guint pid = frida_device_spawn_sync(device_, path, options, nullptr, &error);
     g_object_unref(options);
-    
-    // Free duplicated strings
+
+    // Free duplicated strings (first 3 entries)
     for (int i = 0; i < 3; i++) {
-        g_free(const_cast<char*>(envp[i]));
+        g_free(const_cast<char*>(envp_vec[i]));
     }
     
     if (error) {
@@ -739,8 +778,26 @@ void FridaController::drain_thread_main() {
             }
         }
         
-        // stats_.drain_cycles++; // Field removed from TracerStats
-        
+        // Heartbeat update - use same clock as agent
+#ifdef __APPLE__
+        uint64_t now_ns = mach_absolute_time();
+#else
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        uint64_t now_ns = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+#endif
+        cb_set_heartbeat_ns(control_block_, now_ns);
+
+        // Simple mode progression after a few ticks if registry is present
+        // This drives registry_mode transitions as per TECH_DESIGN requirements
+        if (registry_) {
+            drain_ticks_++;
+            if (drain_ticks_ == 5) {  // After 500ms warm-up
+                cb_set_registry_mode(control_block_, REGISTRY_MODE_PER_THREAD_ONLY);
+                cb_inc_mode_transitions(control_block_);
+            }
+        }
+
         // Sleep for 100ms
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }

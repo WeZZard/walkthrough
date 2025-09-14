@@ -144,6 +144,29 @@ gtest_discover_tests(test_offsets_materialization
     PROPERTIES LABELS "unit"
 )
 
+# Control block IPC helpers tests
+add_executable(test_control_block_ipc
+    test_control_block_ipc.cpp
+)
+target_include_directories(test_control_block_ipc
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(test_control_block_ipc
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+        tracer_utils
+        Threads::Threads
+)
+gtest_discover_tests(test_control_block_ipc
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
 # Install targets
 install(TARGETS
     test_ring_buffer
@@ -152,5 +175,6 @@ install(TARGETS
     test_thread_registry
     test_thread_registration_tls
     test_offsets_materialization
+    test_control_block_ipc
     RUNTIME DESTINATION bin
 )
