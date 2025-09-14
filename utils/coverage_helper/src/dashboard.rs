@@ -10,8 +10,8 @@ use std::process::Command;
 #[derive(Debug, Default, Clone)]
 pub struct ComponentMetrics {
     pub line_coverage: f64,
-    pub function_coverage: f64,
-    pub branch_coverage: f64,
+    _function_coverage: f64,
+    _branch_coverage: f64,
     pub lines_covered: usize,
     pub lines_total: usize,
 }
@@ -81,7 +81,7 @@ pub fn generate_dashboard(
 
 /// Parse LCOV file for coverage metrics
 fn parse_lcov_metrics(lcov_path: &Path) -> Result<HashMap<String, ComponentMetrics>> {
-    let mut metrics = HashMap::new();
+    let metrics = HashMap::new();
     
     if !lcov_path.exists() {
         return Ok(metrics);
