@@ -8,6 +8,9 @@ set(UTILS_SOURCES
     shm_directory.c
     ring_buffer.cpp
     thread_registry.cpp
+    spsc_queue.cpp
+    ring_pool.cpp
+    thread_pools.cpp
     ada_thread.c
     agent_mode.cpp
 )

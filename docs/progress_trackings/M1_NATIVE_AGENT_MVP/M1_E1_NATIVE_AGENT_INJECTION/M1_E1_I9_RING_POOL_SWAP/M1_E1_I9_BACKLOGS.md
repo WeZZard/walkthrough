@@ -84,6 +84,16 @@
 | TD-04 | Add configurable drop policies | P2 | Flexibility |
 | TD-05 | Optimize for NUMA architectures | P2 | Performance |
 
+## Out-of-Scope Issues Identified (Backlogged)
+
+- Free queue initialization discrepancy: In isolated unit environment, `lane_get_free_ring()` may return `UINT32_MAX` immediately after registration for the index lane, indicating an empty free queue despite ring descriptors being initialized. Temporary mitigation exists in `ring_pool_swap_active()` to deterministically rotate to the next ring when the free queue appears empty. Root-cause analysis and proper initialization path verification are backlogged for integration scope.
+
+- Submit queue observability gap: In minimal unit setup, after swap and submit, `lane_take_ring()` did not consistently return the expected ring index when the global registry pointer was not set. Tests now attach the registry explicitly to set the global pointer. Full drain path verification remains backlogged to integration tests with the controller drain thread active.
+
+- Global registry attach semantics: `thread_registry_init_with_capacity()` does not call `ada_set_global_registry`, causing `lane_*` helpers to fail (return false) unless `thread_registry_attach()` is called. Unify semantics between init/attach or expose a public setter to remove this footgun. Backlog for M1_E1 hardening.
+
+- Exhaustion handling policy: Implemented drop-oldest in `ring_pool_handle_exhaustion()` (M1_E1_I9). Follow-ups: add metrics (e.g., dropped events, pool_exhaustions) and validate under integration/bench workloads.
+
 ## Risk Register
 
 | Risk | Probability | Impact | Mitigation |

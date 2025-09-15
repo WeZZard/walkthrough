@@ -2,6 +2,11 @@
 # Utils Unit Tests
 # ===========================================
 
+# Enable testing hooks in utils library for unit tests
+if (TARGET tracer_utils)
+    target_compile_definitions(tracer_utils PUBLIC ADA_TESTING=1)
+endif()
+
 # Ring Buffer test
 add_executable(test_ring_buffer
     test_ring_buffer.cpp
@@ -214,6 +219,76 @@ gtest_discover_tests(test_control_block_ipc
     PROPERTIES LABELS "unit"
 )
 
+# New tests: SPSC queue and RingPool swap protocol
+add_executable(test_spsc_queue
+    test_spsc_queue.cpp
+)
+target_link_libraries(test_spsc_queue
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+        tracer_utils
+        Threads::Threads
+)
+target_include_directories(test_spsc_queue
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+gtest_discover_tests(test_spsc_queue
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
+add_executable(test_ring_pool_swap
+    test_ring_pool_swap.cpp
+)
+target_link_libraries(test_ring_pool_swap
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+        tracer_utils
+        Threads::Threads
+)
+target_include_directories(test_ring_pool_swap
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/utils
+)
+gtest_discover_tests(test_ring_pool_swap
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
+# Thread Pools tests (M1_E1_I9)
+add_executable(test_thread_pools
+    test_thread_pools.cpp
+)
+target_link_libraries(test_thread_pools
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+        tracer_utils
+        Threads::Threads
+)
+target_include_directories(test_thread_pools
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/utils
+)
+gtest_discover_tests(test_thread_pools
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
 # Install targets
 install(TARGETS
     test_ring_buffer
@@ -225,5 +300,8 @@ install(TARGETS
     test_control_block_ipc
     test_shm_directory
     test_thread_registry_fallback
+    test_spsc_queue
+    test_ring_pool_swap
+    test_thread_pools
     RUNTIME DESTINATION bin
 )

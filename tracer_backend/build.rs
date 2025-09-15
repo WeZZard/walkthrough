@@ -184,6 +184,15 @@ fn main() {
         ("build/test_offsets_materialization", "test/test_offsets_materialization"),
         ("build/tests/unit/utils/test_offsets_materialization", "test/test_offsets_materialization"),
         ("out/bin/test_offsets_materialization", "test/test_offsets_materialization"),
+        ("build/test_spsc_queue", "test/test_spsc_queue"),
+        ("build/tests/unit/utils/test_spsc_queue", "test/test_spsc_queue"),
+        ("out/bin/test_spsc_queue", "test/test_spsc_queue"),
+        ("build/test_ring_pool_swap", "test/test_ring_pool_swap"),
+        ("build/tests/unit/utils/test_ring_pool_swap", "test/test_ring_pool_swap"),
+        ("out/bin/test_ring_pool_swap", "test/test_ring_pool_swap"),
+        ("build/test_thread_pools", "test/test_thread_pools"),
+        ("build/tests/unit/utils/test_thread_pools", "test/test_thread_pools"),
+        ("out/bin/test_thread_pools", "test/test_thread_pools"),
         // Note: test_thread_registry_cpp is not built; entries removed
         // Controller unit tests
         ("build/test_spawn_method", "test/test_spawn_method"),
