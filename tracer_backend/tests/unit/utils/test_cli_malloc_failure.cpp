@@ -25,10 +25,9 @@ TEST(TestCliMallocFailure, HandlesAllocationFailureGracefully) {
     // Override malloc to always fail
     test_cli_set_malloc_impl(failing_malloc);
 
-    // Prepare arguments for brief mode (fewer allocations)
+    // Prepare arguments
     char program[] = "test_cli";
-    char brief[] = "--brief";
-    char* argv[] = {program, brief};
+    char* argv[] = {program};
 
     // Redirect stdout to capture output
     int saved_stdout = dup(STDOUT_FILENO);
@@ -37,7 +36,7 @@ TEST(TestCliMallocFailure, HandlesAllocationFailureGracefully) {
     dup2(temp_fd, STDOUT_FILENO);
 
     // Call the test_cli main function
-    int result = test_cli_main(2, argv);
+    int result = test_cli_main(1, argv);
 
     // Restore stdout
     fflush(stdout);

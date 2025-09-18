@@ -53,7 +53,7 @@ TEST_F(ControllerFullLifecycleTest, controller__spawn_attach_resume__then_full_l
     
     // 2. Test spawn method tracking
     printf("  2. Testing spawn with method tracking...\n");
-    char* argv[] = {(char*)"test_cli", (char*)"--brief", nullptr};
+    char* argv[] = {(char*)"test_cli", nullptr, nullptr};
     uint32_t agent_pid;
     
     const char * path = ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/test/test_cli";

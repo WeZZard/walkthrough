@@ -83,7 +83,7 @@ static void inject_and_run(FridaController* controller, const char* exe_rel, uin
     ASSERT_NE(controller, nullptr);
     const char * exe_path = ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/test/";
     std::string full_exe = std::string(exe_path) + exe_rel;
-    char* argv[] = {(char*)full_exe.c_str(), (char*)"--brief", nullptr};
+    char* argv[] = {(char*)full_exe.c_str(), nullptr};
     uint32_t pid = 0;
     int r = frida_controller_spawn_suspended(controller, full_exe.c_str(), argv, &pid);
     if (r != 0 || pid == 0) {

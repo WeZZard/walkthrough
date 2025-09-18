@@ -39,7 +39,7 @@ TEST_F(AgentLoaderTest, agent_loader__load_and_init__then_hooks_installed) {
     
     // 2. Spawn test program
     printf("  2. Spawning test_cli...\n");
-    char* argv[] = {(char*)"test_cli", (char*)"--brief", nullptr};
+    char* argv[] = {(char*)"test_cli", nullptr};
     uint32_t agent_pid;
     
     int result = frida_controller_spawn_suspended(controller,
