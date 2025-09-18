@@ -45,8 +45,20 @@ chmod +x "$QUALITY_SCRIPT"
 echo -e "${BLUE}[PRE-COMMIT]${NC} Checking incremental coverage for staged changes..."
 
 # Execute the script (it has #!/bin/bash shebang)
-if ! "$QUALITY_SCRIPT" incremental; then
+# Use || true to prevent set -e from exiting on non-zero codes
+"$QUALITY_SCRIPT" incremental || QUALITY_EXIT_CODE=$?
+# If the command succeeded (exit 0), we need to set the code manually
+QUALITY_EXIT_CODE=${QUALITY_EXIT_CODE:-0}
+
+# Handle exit codes:
+# 0 = passed
+# 1 = blocked/failed
+# 2 = documentation-only (should pass)
+if [[ $QUALITY_EXIT_CODE -eq 1 ]]; then
     exit 1
+elif [[ $QUALITY_EXIT_CODE -eq 2 ]]; then
+    # Documentation-only changes are allowed
+    :
 fi
 
 # Coverage is already checked by integration_quality.sh in incremental mode
