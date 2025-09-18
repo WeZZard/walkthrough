@@ -33,7 +33,10 @@ target_include_directories(test_main
 # ===========================================
 
 # test_cli - Simple CLI program for tracing tests
-add_executable(test_cli fixtures/test_cli.c)
+add_executable(test_cli
+    fixtures/test_cli.c
+    fixtures/test_cli_modes.c
+)
 target_link_libraries(test_cli PRIVATE m)
 # Place in bin/ directory as build.rs expects
 set_target_properties(test_cli PROPERTIES

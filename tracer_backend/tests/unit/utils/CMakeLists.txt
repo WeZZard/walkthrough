@@ -189,6 +189,49 @@ gtest_discover_tests(test_thread_registry_fallback
     DISCOVERY_TIMEOUT 60
     PROPERTIES LABELS "unit"
 )
+add_executable(test_cli_modes
+    test_cli_modes.cpp
+    ../../fixtures/test_cli_modes.c
+)
+target_include_directories(test_cli_modes
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/fixtures
+)
+target_link_libraries(test_cli_modes
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+)
+gtest_discover_tests(test_cli_modes
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
+# Test for malloc failure in test_cli
+add_executable(test_cli_malloc_failure
+    test_cli_malloc_failure.cpp
+    ../../fixtures/test_cli_modes.c
+)
+target_include_directories(test_cli_malloc_failure
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/fixtures
+)
+target_link_libraries(test_cli_malloc_failure
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+        m
+)
+gtest_discover_tests(test_cli_malloc_failure
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
 gtest_discover_tests(test_offsets_materialization
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_MODE PRE_TEST
@@ -295,6 +338,8 @@ install(TARGETS
     test_ring_buffer_attach
     test_shared_memory
     test_thread_registry
+    test_cli_modes
+    test_cli_malloc_failure
     test_thread_registration_tls
     test_offsets_materialization
     test_control_block_ipc

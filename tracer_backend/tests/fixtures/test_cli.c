@@ -1,10 +1,26 @@
 // Simple CLI test program for tracing
+#include <fcntl.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <math.h>
+
+#include "test_cli_modes.h"
+
+// Wrapper for malloc that can be overridden for testing
+// By default, uses standard malloc
+static void* (*test_malloc_impl)(size_t) = malloc;
+
+// Allow tests to override malloc behavior
+void test_cli_set_malloc_impl(void* (*impl)(size_t)) {
+    test_malloc_impl = impl;
+}
+
+// Wrapper function used in the code
+static void* test_malloc(size_t size) {
+    return test_malloc_impl(size);
+}
 
 // Some functions to trace
 int fibonacci(int n) {
@@ -50,42 +66,57 @@ void recursive_function(int depth) {
 }
 
 int main(int argc, char* argv[]) {
+    TestCliOptions options;
+    test_cli_parse_args(argc, argv, &options);
+    TestCliWorkload workload = test_cli_workload_from_options(&options);
+
     printf("Test CLI Program Started (PID: %d)\n", getpid());
-    
-    // Give time for tracer to attach
-    if (argc > 1 && strcmp(argv[1], "--wait") == 0) {
+
+    if (options.brief_mode) {
+        printf("Running in brief workload mode\n");
+    }
+
+    // Give time for tracer to attach when requested
+    if (options.wait_for_attach) {
         printf("Waiting for tracer to attach...\n");
         sleep(2);
     }
-    
+
     printf("\n=== Testing Fibonacci ===\n");
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < workload.fibonacci_terms; i++) {
         int result = fibonacci(i);
         printf("fibonacci(%d) = %d\n", i, result);
     }
-    
+
     printf("\n=== Testing File Operations ===\n");
-    process_file("/etc/hosts");
-    process_file("/etc/passwd");
-    
+    const char* files[] = {"/etc/hosts", "/etc/passwd"};
+    int max_files = (int)(sizeof(files) / sizeof(files[0]));
+    for (int i = 0; i < workload.file_operations && i < max_files; i++) {
+        process_file(files[i]);
+    }
+
     printf("\n=== Testing Math Operations ===\n");
-    double pi = calculate_pi(10000);
+    double pi = calculate_pi(workload.pi_iterations);
     printf("Calculated PI: %.10f\n", pi);
     printf("Actual PI:     %.10f\n", M_PI);
     printf("Error:         %.10f\n", fabs(pi - M_PI));
-    
+
     printf("\n=== Testing Recursion ===\n");
-    recursive_function(5);
-    
+    recursive_function(workload.recursion_depth);
+
     printf("\n=== Testing Memory Operations ===\n");
-    for (int i = 0; i < 5; i++) {
-        size_t size = (1 << i) * 1024;
-        void* mem = malloc(size);
-        printf("Allocated %zu bytes at %p\n", size, mem);
-        memset(mem, i, size);
-        free(mem);
+    for (int i = 0; i < workload.memory_allocations; i++) {
+        size_t size = (size_t)(1 << i) * 1024;
+        void* mem = test_malloc(size);
+        if (mem != NULL) {
+            printf("Allocated %zu bytes at %p\n", size, mem);
+            memset(mem, i, size);
+            free(mem);
+        } else {
+            printf("Allocation of %zu bytes failed\n", size);
+        }
     }
-    
+
     printf("\nTest CLI Program Completed\n");
     return 0;
 }
