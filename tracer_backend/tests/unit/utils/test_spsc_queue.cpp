@@ -51,23 +51,29 @@ TEST(SpscQueue, spsc__concurrent_producer_consumer__then_progress) {
         for (uint32_t i = 0; i < 5000; ++i) {
             // Retry until push succeeds (queue has space)
             bool pushed = false;
-            for (int retry = 0; retry < 1000 && !pushed; ++retry) {
+            for (int retry = 0; retry < 10000 && !pushed; ++retry) {
                 pushed = spsc_queue_push(q, i);
+                if (!pushed) {
+                    std::this_thread::yield();  // Give consumer a chance to consume
+                }
             }
             EXPECT_TRUE(pushed);  // Should always succeed with retries
             produced.fetch_add(1, std::memory_order_relaxed);
         }
+        stop.store(true);  // Signal consumer that production is done
     });
     std::thread cons([&]{
         uint32_t v;
+        uint32_t expected_value = 0;
         while (consumed.load() < 5000) {
-            // Retry until pop succeeds (queue has items)
-            bool popped = false;
-            for (int retry = 0; retry < 1000 && !popped; ++retry) {
-                popped = spsc_queue_pop(q, &v);
-            }
-            if (popped) {
+            if (spsc_queue_pop(q, &v)) {
+                EXPECT_EQ(v, expected_value++);  // Verify values in order
                 consumed.fetch_add(1, std::memory_order_relaxed);
+            } else if (stop.load() && consumed.load() >= produced.load()) {
+                // Producer finished and we consumed everything
+                break;
+            } else {
+                std::this_thread::yield();  // Give producer a chance to produce
             }
         }
     });

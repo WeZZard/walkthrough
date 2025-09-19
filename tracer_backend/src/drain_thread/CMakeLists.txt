@@ -18,6 +18,7 @@ target_include_directories(tracer_drain_thread
 target_link_libraries(tracer_drain_thread
     PUBLIC
         tracer_utils
+        tracer_atf_writer
         Threads::Threads
 )
 

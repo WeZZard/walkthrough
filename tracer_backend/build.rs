@@ -110,6 +110,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=tracer_controller");
     println!("cargo:rustc-link-lib=static=tracer_utils");
     println!("cargo:rustc-link-lib=static=tracer_drain_thread");
+    println!("cargo:rustc-link-lib=static=tracer_atf_writer");
     
     // Link C++ standard library (needed for ring_buffer.cpp and thread_registry.cpp)
     println!("cargo:rustc-link-lib=c++");
@@ -197,6 +198,12 @@ fn main() {
         ("build/test_drain_thread", "test/test_drain_thread"),
         ("build/tests/unit/drain_thread/test_drain_thread", "test/test_drain_thread"),
         ("out/bin/test_drain_thread", "test/test_drain_thread"),
+        ("build/test_atf_v4_writer", "test/test_atf_v4_writer"),
+        ("build/tests/unit/atf_v4/test_atf_v4_writer", "test/test_atf_v4_writer"),
+        ("out/bin/test_atf_v4_writer", "test/test_atf_v4_writer"),
+        ("build/test_atf_v4_writer_integration", "test/test_atf_v4_writer_integration"),
+        ("build/tests/integration/atf_v4/test_atf_v4_writer_integration", "test/test_atf_v4_writer_integration"),
+        ("out/bin/test_atf_v4_writer_integration", "test/test_atf_v4_writer_integration"),
         ("build/test_per_thread_drain", "test/test_per_thread_drain"),
         ("build/tests/unit/drain_thread/test_per_thread_drain", "test/test_per_thread_drain"),
         ("out/bin/test_per_thread_drain", "test/test_per_thread_drain"),

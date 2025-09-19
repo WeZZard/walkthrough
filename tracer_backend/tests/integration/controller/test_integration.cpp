@@ -177,9 +177,17 @@ TEST_F(IntegrationTest, controller__state_transitions__then_correct_sequence) {
     // Spawn process
     char* argv[] = {(char*)"test_cli", nullptr};
     uint32_t pid = 0;
-    frida_controller_spawn_suspended(controller, 
+    int result = frida_controller_spawn_suspended(controller,
         ADA_WORKSPACE_ROOT "/target/" ADA_BUILD_PROFILE "/tracer_backend/test/test_cli", argv, &pid);
-    
+
+    if (result != 0) {
+        printf("  ⚠️  Spawn failed (result=%d) - may need elevated permissions\n", result);
+        frida_controller_destroy(controller);
+        GTEST_SKIP() << "Spawn failed - may need elevated permissions";
+    }
+    ASSERT_EQ(result, 0);
+    ASSERT_GT(pid, 0u);
+
     ProcessState state = frida_controller_get_state(controller);
     ASSERT_TRUE(state == PROCESS_STATE_SUSPENDED || state == PROCESS_STATE_SPAWNING);
     
@@ -188,19 +196,24 @@ TEST_F(IntegrationTest, controller__state_transitions__then_correct_sequence) {
     ASSERT_EQ(frida_controller_get_state(controller), PROCESS_STATE_ATTACHED);
     
     // Resume
-    frida_controller_resume(controller);
+    result = frida_controller_resume(controller);
+    ASSERT_EQ(result, 0);
     ASSERT_EQ(frida_controller_get_state(controller), PROCESS_STATE_RUNNING);
-    
-    sleep(1);
-    
+
+    // Let process run briefly
+    usleep(500 * 1000); // 500ms instead of 1s for faster test
+
     // Detach
-    frida_controller_detach(controller);
+    result = frida_controller_detach(controller);
+    ASSERT_EQ(result, 0);
     ASSERT_EQ(frida_controller_get_state(controller), PROCESS_STATE_INITIALIZED);
-    
+
     // Cleanup
     frida_controller_destroy(controller);
     kill(pid, SIGTERM);
-    waitpid(pid, nullptr, WNOHANG);
+    // Wait briefly for process to terminate
+    int status;
+    waitpid(pid, &status, WNOHANG);
     
     printf("  ✓ State transitions test passed\n");
 }

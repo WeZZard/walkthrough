@@ -157,6 +157,7 @@ struct DrainThread {
     atomic_int          state;
     ThreadRegistry*     registry;
     DrainConfig         config;
+    AtfV4Writer*        atf_writer;
 
     pthread_t           worker;
     bool                thread_started;

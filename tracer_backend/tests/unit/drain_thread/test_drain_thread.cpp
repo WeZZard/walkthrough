@@ -13,6 +13,7 @@
 extern "C" {
 #include <pthread.h>
 #include <tracer_backend/ada/thread.h>
+#include <tracer_backend/atf/atf_v4_writer.h>
 #include <tracer_backend/drain_thread/drain_thread.h>
 #include <tracer_backend/utils/thread_registry.h>
 
@@ -1007,6 +1008,23 @@ TEST(DrainThreadUnit,
 
   EXPECT_FALSE(drain_thread_test_cycle(drain, false));
   EXPECT_EQ(drain_thread_test_get_rr_cursor(drain), 1u % capacity);
+
+  drain_thread_destroy(drain);
+}
+
+TEST(DrainThreadUnit,
+     drain_thread__attach_atf_writer__then_retrievable) {
+  HookScope guard;
+  RegistryHarness harness(2);
+  DrainThread *drain = create_drain(harness, nullptr);
+  ASSERT_NE(drain, nullptr);
+
+  AtfV4Writer writer{};
+  drain_thread_set_atf_writer(drain, &writer);
+  EXPECT_EQ(drain_thread_get_atf_writer(drain), &writer);
+
+  drain_thread_set_atf_writer(drain, nullptr);
+  EXPECT_EQ(drain_thread_get_atf_writer(drain), nullptr);
 
   drain_thread_destroy(drain);
 }

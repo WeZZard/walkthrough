@@ -65,12 +65,14 @@ add_subdirectory(unit/utils)
 add_subdirectory(unit/drain_thread)
 add_subdirectory(unit/controller)
 add_subdirectory(unit/agent)
+add_subdirectory(unit/atf_v4)
 
 # Integration tests
 add_subdirectory(integration/utils)
 add_subdirectory(integration/drain_thread)
 add_subdirectory(integration/controller)
 add_subdirectory(integration/agent)
+add_subdirectory(integration/atf_v4)
 
 # Benchmark tests (when available)
 add_subdirectory(bench/utils)

@@ -377,7 +377,12 @@ pub fn should_exclude_from_coverage(file_path: &str) -> bool {
     file_path.contains("googletest") ||
     file_path.contains("googlemock") ||
     file_path.contains("gtest") ||
-    file_path.contains("gmock")
+    file_path.contains("gmock") ||
+    // Generated code (protobuf, etc.)
+    file_path.ends_with(".pb-c.c") ||
+    file_path.ends_with(".pb-c.h") ||
+    file_path.contains("_test_helpers.c") ||
+    file_path.contains("_test_helpers.h")
 }
 
 /// Detect which component a file belongs to

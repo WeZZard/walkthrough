@@ -91,6 +91,7 @@ configure_file(
 
 # Build order matters for dependencies
 add_subdirectory(src/utils)        # Utils library (no dependencies)
+add_subdirectory(src/atf)          # ATF writer library (depends on utils)
 add_subdirectory(src/drain_thread) # Drain thread library (depends on utils)
 add_subdirectory(src/controller)   # Controller library (depends on utils)
 add_subdirectory(src/agent)        # Agent library (depends on utils)
@@ -132,6 +133,12 @@ install(TARGETS tracer_drain_thread
 )
 
 install(TARGETS tracer_utils
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(TARGETS tracer_atf_writer
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin

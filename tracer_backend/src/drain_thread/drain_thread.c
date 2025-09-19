@@ -8,6 +8,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <tracer_backend/atf/atf_v4_writer.h>
+
 #if defined(__has_attribute)
 #if __has_attribute(weak)
 #define ADA_WEAK_SYMBOL __attribute__((weak))
@@ -1004,6 +1006,7 @@ DrainThread* drain_thread_create(ThreadRegistry* registry, const DrainConfig* co
 
     drain->registry = registry;
     drain->config = local_config;
+    drain->atf_writer = NULL;
     drain->thread_started = false;
 
     drain_metrics_atomic_reset(&drain->metrics);
@@ -1122,6 +1125,11 @@ int drain_thread_stop(DrainThread* drain) {
         pthread_mutex_unlock(&drain->lifecycle_lock);
     }
 
+    if (drain->atf_writer) {
+        (void)atf_v4_writer_flush(drain->atf_writer);
+        (void)atf_v4_writer_finalize(drain->atf_writer);
+    }
+
     return rc;
 }
 
@@ -1171,6 +1179,25 @@ int drain_thread_update_config(DrainThread* drain, const DrainConfig* config) {
     drain->config = *config;
     pthread_mutex_unlock(&drain->lifecycle_lock);
     return 0;
+}
+
+void drain_thread_set_atf_writer(DrainThread* drain, AtfV4Writer* writer) {
+    if (!drain) {
+        return;
+    }
+    pthread_mutex_lock(&drain->lifecycle_lock);
+    drain->atf_writer = writer;
+    pthread_mutex_unlock(&drain->lifecycle_lock);
+}
+
+AtfV4Writer* drain_thread_get_atf_writer(DrainThread* drain) {
+    if (!drain) {
+        return NULL;
+    }
+    pthread_mutex_lock(&drain->lifecycle_lock);
+    AtfV4Writer* writer = drain->atf_writer;
+    pthread_mutex_unlock(&drain->lifecycle_lock);
+    return writer;
 }
 
 // --------------------------------------------------------------------------------------

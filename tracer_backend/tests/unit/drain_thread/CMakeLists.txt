@@ -18,6 +18,7 @@ target_link_libraries(test_drain_thread
         GTest::gtest
         GTest::gmock
         tracer_drain_thread
+        tracer_atf_writer
         tracer_utils
         Threads::Threads
 )
@@ -65,4 +66,3 @@ install(TARGETS
     test_per_thread_drain
     RUNTIME DESTINATION bin
 )
-
