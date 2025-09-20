@@ -140,3 +140,60 @@ if(FRIDA_CORE_TEST)
         RUNTIME DESTINATION bin
     )
 endif()
+
+# Usage formatting test (does not require Frida)
+add_executable(test_controller_usage
+    test_controller_usage.cpp
+)
+target_include_directories(test_controller_usage
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}  # For ada_paths.h
+)
+target_link_libraries(test_controller_usage
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+        tracer_controller_cli
+)
+
+gtest_discover_tests(test_controller_usage
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
+install(TARGETS
+    test_controller_usage
+    RUNTIME DESTINATION bin
+)
+
+add_executable(test_controller_main
+    test_controller_main.cpp
+    controller_main_test_support.c
+)
+target_include_directories(test_controller_main
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}  # For ada_paths.h
+)
+target_link_libraries(test_controller_main
+    PRIVATE
+        test_main
+        GTest::gtest
+        GTest::gmock
+)
+
+gtest_discover_tests(test_controller_main
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit"
+)
+
+install(TARGETS
+    test_controller_main
+    RUNTIME DESTINATION bin
+)

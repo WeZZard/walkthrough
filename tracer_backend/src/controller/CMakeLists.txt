@@ -15,6 +15,25 @@ if(NOT FRIDA_CORE_LIBRARY)
     message(FATAL_ERROR "Frida Core library not found. Run init_third_parties.sh")
 endif()
 
+# CLI helpers
+add_library(tracer_controller_cli STATIC
+    cli_usage.c
+)
+
+set_target_properties(tracer_controller_cli PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+)
+
+target_include_directories(tracer_controller_cli
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(tracer_controller_cli
+    PUBLIC
+        c_std_11
+)
+
 # Controller library
 add_library(tracer_controller STATIC
     frida_controller.cpp
@@ -76,6 +95,9 @@ target_link_libraries(tracer_poc
     PRIVATE
         tracer_controller
         tracer_utils
+        tracer_controller_cli
+        tracer_timer
+        m
         Threads::Threads
 )
 

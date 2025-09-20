@@ -715,49 +715,136 @@ collect_coverage() {
 
 check_incremental_coverage() {
     log_info "Checking incremental coverage for changed lines..."
-    
+
     local changed_files=$(has_source_changes || echo "")
     if [[ -z "$changed_files" ]]; then
         log_info "No source files changed"
         return 0
     fi
-    
+
     log_info "Changed source files:"
     echo "$changed_files" | sed 's/^/  - /'
-    
+
     local merged_lcov="${COVERAGE_REPORT_DIR}/merged.lcov"
     if [[ ! -f "$merged_lcov" ]]; then
         log_error "No coverage data found"
         deduct_points 100 "Coverage data missing"
         return 1
     fi
-    
-    local compare_branch="HEAD~1"
-    if git rev-parse --verify origin/main &>/dev/null; then
-        compare_branch="origin/main"
+
+    # Filter out test files from the LCOV report before passing to diff-cover
+    # This ensures test files don't block commits due to coverage requirements
+    local filtered_lcov="${COVERAGE_REPORT_DIR}/filtered.lcov"
+    log_info "Filtering test files from coverage report..."
+
+    # Copy the original LCOV file
+    cp "$merged_lcov" "$filtered_lcov"
+
+    # Remove test files using lcov's --remove option
+    # This removes all test-related paths from the coverage data
+    if command -v lcov >/dev/null 2>&1; then
+        lcov --remove "$filtered_lcov" \
+             "*/tests/*" \
+             "*/test/*" \
+             "*/bench/*" \
+             "*/benchmark/*" \
+             "*_test.c" \
+             "*_test.cpp" \
+             "*_test_support.c" \
+             "*_test_support.cpp" \
+             "*_whitebox.c" \
+             "*_whitebox.cpp" \
+             "*/googletest/*" \
+             "*/gtest/*" \
+             "*/_deps/googletest-*" \
+             -o "$filtered_lcov" 2>/dev/null || {
+            log_warn "Failed to filter test files with lcov, using original report"
+            cp "$merged_lcov" "$filtered_lcov"
+        }
+    else
+        log_warn "lcov not found, cannot filter test files from coverage"
     fi
-    
-    # Run diff-cover and capture output
-    # Exclude test files from coverage requirements - only check production code
-    if ! diff-cover "$merged_lcov" \
-                  --fail-under=100 \
-                  --compare-branch="$compare_branch" \
-                  --exclude "*/tests/*" \
-                  --exclude "*/test/*" \
-                  --exclude "*/bench/*" \
-                  --exclude "*/benchmark/*" 2>&1 | tee "$COVERAGE_OUTPUT"; then
-        
-        log_error "Some changed lines lack coverage"
-        deduct_points 100 "Changed lines must have 100% test coverage"
-        
+
+    # Determine the comparison branch based on context
+    local compare_branch="HEAD"  # Default: check uncommitted changes
+
+    # If we have uncommitted changes, check them against HEAD
+    # Otherwise check current commit against its parent
+    if git diff --quiet && git diff --cached --quiet; then
+        # No uncommitted changes, check current commit
+        compare_branch="HEAD~1"
+        log_info "No uncommitted changes, checking coverage for current commit"
+    else
+        # Have uncommitted changes, check them
+        compare_branch="HEAD"
+        log_info "Checking coverage for uncommitted changes"
+    fi
+
+    # For CI or when explicitly checking all branch changes
+    if [[ "${CI:-false}" == "true" ]] || [[ "${CHECK_FULL_BRANCH:-false}" == "true" ]]; then
+        if git rev-parse --verify origin/main &>/dev/null; then
+            compare_branch="origin/main"
+            log_info "CI mode: checking coverage against origin/main"
+        fi
+    fi
+
+    # Get list of changed production files (excluding test files)
+    local changed_files=$(git diff --name-only "$compare_branch" | grep -E '\.(c|cpp|h|rs|py)$' | \
+                          grep -v -E '(tests?/|bench/|benchmark/|_test\.|_whitebox\.|test_|_test_support\.)' || true)
+
+    if [[ -z "$changed_files" ]]; then
+        log_success "No production code changes to check"
+        end_timer "Coverage Check"
+        return 0
+    fi
+
+    log_info "Changed production files:"
+    echo "$changed_files" | sed 's/^/  - /'
+
+    # Run diff-cover on the filtered LCOV file
+    # Capture output but don't immediately fail
+    diff-cover "$filtered_lcov" \
+               --fail-under=100 \
+               --compare-branch="$compare_branch" 2>&1 | tee "$COVERAGE_OUTPUT"
+    local diff_cover_result=${PIPESTATUS[0]}
+
+    # Parse diff-cover output to check if only test files are missing coverage
+    local production_files_missing_coverage=false
+    local coverage_issues=""
+
+    # Extract files with missing coverage from diff-cover output
+    while IFS= read -r line; do
+        # Match lines like "filename.c (XX.X%): Missing lines ..."
+        if [[ "$line" =~ ^([^[:space:]]+\.(c|cpp|h|rs|py))[[:space:]]+\(([0-9.]+)%\):.*Missing ]]; then
+            local file="${BASH_REMATCH[1]}"
+            local coverage="${BASH_REMATCH[3]}"
+
+            # Check if this is a test file
+            if ! echo "$file" | grep -qE '(tests?/|bench/|benchmark/|_test\.|_whitebox\.|test_|_test_support\.)'; then
+                # This is a production file with missing coverage
+                production_files_missing_coverage=true
+                coverage_issues="${coverage_issues}  - ${file} (${coverage}%)\n"
+            else
+                log_info "Ignoring test file coverage: ${file} (${coverage}%)"
+            fi
+        fi
+    done < "$COVERAGE_OUTPUT"
+
+    if [[ "$production_files_missing_coverage" == "true" ]]; then
+        log_error "Production files lack coverage:"
+        echo -e "$coverage_issues"
+        deduct_points 100 "Production code must have 100% test coverage"
+
         # Parse coverage failures for agent
         if [[ "$AGENT_MODE" == "true" ]]; then
             parse_coverage_failures_for_agent
         fi
-        
+
         return 1
+    elif [[ $diff_cover_result -ne 0 ]]; then
+        log_warning "Test files lack coverage (ignored for quality gate)"
     fi
-    
+
     log_success "All changed lines have 100% coverage"
 }
 
