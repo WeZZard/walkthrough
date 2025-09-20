@@ -95,6 +95,7 @@ add_subdirectory(src/atf)          # ATF writer library (depends on utils)
 add_subdirectory(src/drain_thread) # Drain thread library (depends on utils)
 add_subdirectory(src/controller)   # Controller library (depends on utils)
 add_subdirectory(src/agent)        # Agent library (depends on utils)
+add_subdirectory(src/cli_parser)   # CLI parser library (independent)
 
 # C API library for Rust FFI
 add_library(tracer_c_api SHARED src/tracer_c_api.cpp)

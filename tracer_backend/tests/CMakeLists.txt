@@ -66,6 +66,7 @@ add_subdirectory(unit/drain_thread)
 add_subdirectory(unit/controller)
 add_subdirectory(unit/agent)
 add_subdirectory(unit/atf_v4)
+add_subdirectory(unit/cli_parser)
 
 # Integration tests
 add_subdirectory(integration/utils)
