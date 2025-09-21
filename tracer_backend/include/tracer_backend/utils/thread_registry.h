@@ -96,6 +96,11 @@ bool lane_return_ring(Lane* lane, uint32_t ring_idx);
 // Memory ordering: Uses memory_order_acquire for consuming
 uint32_t lane_get_free_ring(Lane* lane);
 
+// Detail lane selective persistence helpers.
+void lane_mark_event(Lane* lane);
+bool lane_has_marked_event(Lane* lane);
+void lane_clear_marked_event(Lane* lane);
+
 
 // ============================================================================
 // Drain thread operations

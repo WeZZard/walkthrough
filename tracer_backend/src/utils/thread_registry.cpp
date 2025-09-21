@@ -376,6 +376,24 @@ uint32_t lane_get_free_ring(Lane* lane) {
 
 // lane_get_active_ring is already defined as inline in header
 
+void lane_mark_event(Lane* lane) {
+    if (!lane) return;
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
+    cpp_lane->marked_event_seen.store(true, std::memory_order_release);
+}
+
+bool lane_has_marked_event(Lane* lane) {
+    if (!lane) return false;
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
+    return cpp_lane->marked_event_seen.load(std::memory_order_acquire);
+}
+
+void lane_clear_marked_event(Lane* lane) {
+    if (!lane) return;
+    auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);
+    cpp_lane->marked_event_seen.store(false, std::memory_order_release);
+}
+
 bool lane_swap_active_ring(Lane* lane) {
     if (!lane) return false;
     auto* cpp_lane = reinterpret_cast<ada::internal::Lane*>(lane);

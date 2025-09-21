@@ -180,6 +180,11 @@ fn main() {
         ("build/tests/unit/cli_parser/test_cli_parser_mode_detection", "test/test_cli_parser_mode_detection"),
         ("build/tests/unit/cli_parser/test_cli_parser_args", "test/test_cli_parser_args"),
         ("build/tests/unit/cli_parser/test_cli_parser_comprehensive", "test/test_cli_parser_comprehensive"),
+        ("build/tests/unit/selective_persistence/test_marking_policy", "test/test_marking_policy"),
+        ("build/tests/unit/selective_persistence/test_detail_lane_control", "test/test_detail_lane_control"),
+        ("build/tests/unit/selective_persistence/test_selective_persistence_support", "test/test_selective_persistence_support"),
+        ("build/tests/unit/selective_persistence/test_coverage_gaps", "test/test_coverage_gaps"),
+        ("build/tests/unit/selective_persistence/test_force_coverage", "test/test_force_coverage"),
         ("build/test_cli_malloc_failure", "test/test_cli_malloc_failure"),
         ("build/tests/unit/utils/test_cli_malloc_failure", "test/test_cli_malloc_failure"),
         ("out/bin/test_cli_malloc_failure", "test/test_cli_malloc_failure"),
@@ -278,6 +283,10 @@ fn main() {
         ("build/test_registry_lifecycle", "test/test_registry_lifecycle"),
         ("build/tests/integration/controller/test_registry_lifecycle", "test/test_registry_lifecycle"),
         ("out/bin/test_registry_lifecycle", "test/test_registry_lifecycle"),
+        // Selective persistence integration tests
+        ("build/test_selective_persistence_integration", "test/test_selective_persistence_integration"),
+        ("build/tests/integration/selective_persistence/test_selective_persistence_integration", "test/test_selective_persistence_integration"),
+        ("out/bin/test_selective_persistence_integration", "test/test_selective_persistence_integration"),
         // Agent integration tests
         ("build/test_agent_loader", "test/test_agent_loader"),
         ("build/tests/integration/agent/test_agent_loader", "test/test_agent_loader"),

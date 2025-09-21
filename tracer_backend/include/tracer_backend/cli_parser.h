@@ -42,6 +42,8 @@ typedef struct TriggerDefinition {
     char* symbol_name;
     char* module_name;
     uint32_t time_seconds;
+    bool case_sensitive;
+    bool is_regex;
 } TriggerDefinition;
 
 typedef struct TriggerList {

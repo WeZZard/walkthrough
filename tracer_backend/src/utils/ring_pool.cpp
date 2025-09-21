@@ -104,9 +104,9 @@ bool ring_pool_mark_detail(RingPool* pool) {
     if (!pool) return false;
     auto* p = reinterpret_cast<AdaRingPool*>(pool);
     if (p->lane_type != 1) return true; // no-op for index lanes
-    auto* cpp_lanes = ada::internal::to_cpp(p->lanes);
-    // Use events_generated as a visible marker in tests; increment relaxed.
-    cpp_lanes->events_generated.fetch_add(1, std::memory_order_relaxed);
+    Lane* lane = thread_lanes_get_detail_lane(p->lanes);
+    if (!lane) return false;
+    lane_mark_event(lane);
     return true;
 }
 
@@ -114,8 +114,9 @@ bool ring_pool_is_detail_marked(RingPool* pool) {
     if (!pool) return false;
     auto* p = reinterpret_cast<AdaRingPool*>(pool);
     if (p->lane_type != 1) return false;
-    auto* cpp_lanes = ada::internal::to_cpp(p->lanes);
-    return cpp_lanes->events_generated.load(std::memory_order_relaxed) != 0;
+    Lane* lane = thread_lanes_get_detail_lane(p->lanes);
+    if (!lane) return false;
+    return lane_has_marked_event(lane);
 }
 
 } // extern "C"

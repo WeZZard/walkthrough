@@ -44,7 +44,14 @@ static bool handle_pre_roll_flag(CLIParser* parser, const char* value);
 static bool handle_post_roll_flag(CLIParser* parser, const char* value);
 static bool handle_exclude_flag(CLIParser* parser, const char* value);
 static int cli_find_next_unconsumed(const CLIParser* parser, int start_index);
-static bool cli_append_trigger(CLIParser* parser, TriggerType type, char* raw_value, char* symbol, char* module, uint32_t time_seconds);
+static bool cli_append_trigger(CLIParser* parser,
+                               TriggerType type,
+                               char* raw_value,
+                               char* symbol,
+                               char* module,
+                               uint32_t time_seconds,
+                               bool case_sensitive,
+                               bool is_regex);
 static bool cli_ensure_trigger_capacity(TriggerList* list, size_t required);
 static char* cli_strdup(const char* source);
 static char* cli_strndup(const char* source, size_t length);
@@ -918,7 +925,7 @@ static bool handle_trigger_flag(CLIParser* parser, const char* value) {
             return false;
         }
 
-        if (!cli_append_trigger(parser, TRIGGER_TYPE_CRASH, raw_copy, NULL, NULL, 0)) {
+        if (!cli_append_trigger(parser, TRIGGER_TYPE_CRASH, raw_copy, NULL, NULL, 0, true, false)) {
             free(raw_copy);
             return false;
         }
@@ -926,45 +933,53 @@ static bool handle_trigger_flag(CLIParser* parser, const char* value) {
         return true;
     }
 
-    if (strncmp(value, "symbol=", 7) == 0) {
-        const char* spec = value + 7;
+    bool is_symbol_literal = strncmp(value, "symbol=", 7) == 0;
+    bool is_symbol_regex = strncmp(value, "symbol~=", 8) == 0;
+    if (is_symbol_literal || is_symbol_regex) {
+        const size_t prefix_len = is_symbol_regex ? 8 : 7;
+        const char* spec = value + prefix_len;
         if (*spec == '\0') {
-            cli_parser_set_error(parser, "Invalid trigger 'symbol=' requires a symbol name.");
+            cli_parser_set_error(parser, "Invalid trigger 'symbol' requires a non-empty pattern.");
             return false;
         }
+
+        bool case_sensitive = true;
+        bool is_regex = is_symbol_regex;
 
         const char* symbol_start = spec;
         const char* module_start = NULL;
         size_t module_length = 0;
 
-        const char* double_colon = strstr(spec, "::");
-        if (double_colon != NULL) {
-            module_start = spec;
-            module_length = (size_t)(double_colon - spec);
-            symbol_start = double_colon + 2;
-        } else {
-            const char* at_separator = strchr(spec, '@');
-            const char* colon_separator = strchr(spec, ':');
-            const char* separator = NULL;
-
-            if (at_separator != NULL && colon_separator != NULL) {
-                separator = at_separator < colon_separator ? at_separator : colon_separator;
-            } else if (at_separator != NULL) {
-                separator = at_separator;
-            } else if (colon_separator != NULL) {
-                separator = colon_separator;
-            }
-
-            if (separator != NULL) {
+        if (!is_regex) {
+            const char* double_colon = strstr(spec, "::");
+            if (double_colon != NULL) {
                 module_start = spec;
-                module_length = (size_t)(separator - spec);
-                symbol_start = separator + 1;
-            }
-        }
+                module_length = (size_t)(double_colon - spec);
+                symbol_start = double_colon + 2;
+            } else {
+                const char* at_separator = strchr(spec, '@');
+                const char* colon_separator = strchr(spec, ':');
+                const char* separator = NULL;
 
-        if (*symbol_start == '\0') {
-            cli_parser_set_error(parser, "Invalid trigger 'symbol=' requires a non-empty symbol name.");
-            return false;
+                if (at_separator != NULL && colon_separator != NULL) {
+                    separator = at_separator < colon_separator ? at_separator : colon_separator;
+                } else if (at_separator != NULL) {
+                    separator = at_separator;
+                } else if (colon_separator != NULL) {
+                    separator = colon_separator;
+                }
+
+                if (separator != NULL) {
+                    module_start = spec;
+                    module_length = (size_t)(separator - spec);
+                    symbol_start = separator + 1;
+                }
+            }
+
+            if (*symbol_start == '\0') {
+                cli_parser_set_error(parser, "Invalid trigger 'symbol=' requires a non-empty symbol name.");
+                return false;
+            }
         }
 
         char* raw_copy = cli_strdup(value);
@@ -981,7 +996,7 @@ static bool handle_trigger_flag(CLIParser* parser, const char* value) {
         }
 
         char* module_copy = NULL;
-        if (module_start != NULL && module_length > 0) {
+        if (!is_regex && module_start != NULL && module_length > 0) {
             module_copy = cli_strndup(module_start, module_length);
             if (module_copy == NULL) {
                 free(raw_copy);
@@ -991,7 +1006,14 @@ static bool handle_trigger_flag(CLIParser* parser, const char* value) {
             }
         }
 
-        if (!cli_append_trigger(parser, TRIGGER_TYPE_SYMBOL, raw_copy, symbol_copy, module_copy, 0)) {
+        if (!cli_append_trigger(parser,
+                                TRIGGER_TYPE_SYMBOL,
+                                raw_copy,
+                                symbol_copy,
+                                module_copy,
+                                0,
+                                case_sensitive,
+                                is_regex)) {
             free(raw_copy);
             free(symbol_copy);
             free(module_copy);
@@ -1020,7 +1042,7 @@ static bool handle_trigger_flag(CLIParser* parser, const char* value) {
             return false;
         }
 
-        if (!cli_append_trigger(parser, TRIGGER_TYPE_TIME, raw_copy, NULL, NULL, seconds)) {
+        if (!cli_append_trigger(parser, TRIGGER_TYPE_TIME, raw_copy, NULL, NULL, seconds, true, false)) {
             free(raw_copy);
             return false;
         }
@@ -1123,7 +1145,14 @@ static bool handle_exclude_flag(CLIParser* parser, const char* value) {
     return true;
 }
 
-static bool cli_append_trigger(CLIParser* parser, TriggerType type, char* raw_value, char* symbol, char* module, uint32_t time_seconds) {
+static bool cli_append_trigger(CLIParser* parser,
+                               TriggerType type,
+                               char* raw_value,
+                               char* symbol,
+                               char* module,
+                               uint32_t time_seconds,
+                               bool case_sensitive,
+                               bool is_regex) {
     if (parser == NULL || raw_value == NULL) {
         return false;
     }
@@ -1149,6 +1178,8 @@ static bool cli_append_trigger(CLIParser* parser, TriggerType type, char* raw_va
     entry->symbol_name = symbol;
     entry->module_name = module;
     entry->time_seconds = time_seconds;
+    entry->case_sensitive = case_sensitive;
+    entry->is_regex = is_regex;
 
     return true;
 }
@@ -1180,6 +1211,8 @@ static bool cli_ensure_trigger_capacity(TriggerList* list, size_t required) {
         resized[i].symbol_name = NULL;
         resized[i].module_name = NULL;
         resized[i].time_seconds = 0;
+        resized[i].case_sensitive = true;
+        resized[i].is_regex = false;
     }
 
     list->entries = resized;

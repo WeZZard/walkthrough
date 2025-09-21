@@ -116,7 +116,14 @@ extern "C" bool handle_trigger_flag(CLIParser* parser, const char* value);
 extern "C" bool handle_pre_roll_flag(CLIParser* parser, const char* value);
 extern "C" bool handle_post_roll_flag(CLIParser* parser, const char* value);
 extern "C" bool handle_exclude_flag(CLIParser* parser, const char* value);
-extern "C" bool cli_append_trigger(CLIParser* parser, TriggerType type, char* raw_value, char* symbol, char* module, uint32_t time_seconds);
+extern "C" bool cli_append_trigger(CLIParser* parser,
+                                    TriggerType type,
+                                    char* raw_value,
+                                    char* symbol,
+                                    char* module,
+                                    uint32_t time_seconds,
+                                    bool case_sensitive,
+                                    bool is_regex);
 extern "C" bool cli_ensure_trigger_capacity(TriggerList* list, size_t required);
 extern "C" bool cli_parse_u32(const char* value, uint32_t max_value, uint32_t* out);
 extern "C" bool cli_append_filter_module(TracerConfig* config, char* module_name);
@@ -763,6 +770,24 @@ TEST_F(CliParserComprehensiveTest, trigger_flag_symbol_parses_various_delimiters
     EXPECT_STREQ(parser->config.triggers.entries[0].symbol_name, "start");
     EXPECT_STREQ(parser->config.triggers.entries[1].symbol_name, "tick");
     EXPECT_STREQ(parser->config.triggers.entries[2].symbol_name, "run");
+    EXPECT_FALSE(parser->config.triggers.entries[0].is_regex);
+    EXPECT_TRUE(parser->config.triggers.entries[0].case_sensitive);
+    cli_reset_triggers(&parser->config);
+    cli_parser_destroy(parser);
+}
+
+TEST_F(CliParserComprehensiveTest, trigger_flag_symbol_regex_parses_pattern) {
+    ArgList args{ "ada", "trace", "spawn", "./binary" };
+    CLIParser* parser = MakeParser(args);
+    ASSERT_NE(parser, nullptr);
+    EXPECT_TRUE(handle_trigger_flag(parser, "symbol~=foo.*bar"));
+    ASSERT_EQ(parser->config.triggers.count, 1u);
+    const TriggerDefinition& entry = parser->config.triggers.entries[0];
+    EXPECT_EQ(entry.type, TRIGGER_TYPE_SYMBOL);
+    EXPECT_TRUE(entry.is_regex);
+    EXPECT_TRUE(entry.case_sensitive);
+    EXPECT_STREQ(entry.symbol_name, "foo.*bar");
+    EXPECT_EQ(entry.module_name, nullptr);
     cli_reset_triggers(&parser->config);
     cli_parser_destroy(parser);
 }
@@ -1340,14 +1365,14 @@ TEST_F(CliParserComprehensiveTest, trigger_flag_edge_cases_for_coverage) {
 }
 
 TEST_F(CliParserComprehensiveTest, append_trigger_null_parameters) {
-    EXPECT_FALSE(cli_append_trigger(nullptr, TRIGGER_TYPE_CRASH, nullptr, nullptr, nullptr, 0));
+    EXPECT_FALSE(cli_append_trigger(nullptr, TRIGGER_TYPE_CRASH, nullptr, nullptr, nullptr, 0, true, false));
 
     ArgList args{ "ada" };
     CLIParser* parser = MakeParser(args);
     ASSERT_NE(parser, nullptr);
 
     // NULL raw_value
-    EXPECT_FALSE(cli_append_trigger(parser, TRIGGER_TYPE_CRASH, nullptr, nullptr, nullptr, 0));
+    EXPECT_FALSE(cli_append_trigger(parser, TRIGGER_TYPE_CRASH, nullptr, nullptr, nullptr, 0, true, false));
 
     cli_parser_destroy(parser);
 }

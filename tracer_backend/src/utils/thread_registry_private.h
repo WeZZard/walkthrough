@@ -97,6 +97,7 @@ public:
     std::atomic<uint64_t> events_written{0};
     std::atomic<uint64_t> bytes_written{0};
     std::atomic<uint32_t> ring_swaps{0};
+    std::atomic<bool> marked_event_seen{false};
     
     // Initialize lane with structured memory
     void initialize(LaneMemoryLayout* /*layout*/, uint32_t num_rings, size_t ring_size, size_t event_size, uint32_t queue_capacity) {
@@ -169,6 +170,8 @@ public:
         index_lane.initialize(index_memory, RINGS_PER_INDEX_LANE, 64 * 1024, sizeof(IndexEvent), QUEUE_COUNT_INDEX_LANE);
         if (needs_log_thread_registry_registry) printf("DEBUG: Initializing detail_lane\n");
         detail_lane.initialize(detail_memory, RINGS_PER_DETAIL_LANE, 256 * 1024, sizeof(DetailEvent), QUEUE_COUNT_DETAIL_LANE);
+        index_lane.marked_event_seen.store(false, std::memory_order_relaxed);
+        detail_lane.marked_event_seen.store(false, std::memory_order_relaxed);
         
         if (needs_log_thread_registry_registry) printf("DEBUG: Setting active flag\n");
         active.store(true, std::memory_order_release);

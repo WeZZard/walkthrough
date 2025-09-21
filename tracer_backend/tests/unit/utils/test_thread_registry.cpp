@@ -560,3 +560,139 @@ TEST_F(ThreadRegistryTest, thread_registry__c_api_compatibility__then_works) {
     EXPECT_EQ(cpp_registry->thread_count.load(), 1u);
     thread_registry_dump(c_registry);
 }
+
+// Test lane marking event functions
+TEST_F(ThreadRegistryTest, lane_mark_event__valid_lane__then_sets_marked) {
+    ThreadRegistry* c_registry = thread_registry_init(memory, memory_size);
+    ASSERT_NE(c_registry, nullptr);
+
+    ThreadLaneSet* lanes = thread_registry_register(c_registry, 67890);
+    ASSERT_NE(lanes, nullptr);
+
+    Lane* detail_lane = thread_lanes_get_detail_lane(lanes);
+    ASSERT_NE(detail_lane, nullptr);
+
+    // Initially should not have marked event
+    EXPECT_FALSE(lane_has_marked_event(detail_lane));
+
+    // Mark the event
+    lane_mark_event(detail_lane);
+
+    // Should now have marked event
+    EXPECT_TRUE(lane_has_marked_event(detail_lane));
+
+    // Clear the marked event
+    lane_clear_marked_event(detail_lane);
+
+    // Should no longer have marked event
+    EXPECT_FALSE(lane_has_marked_event(detail_lane));
+}
+
+TEST_F(ThreadRegistryTest, lane_mark_event__null_lane__then_safe) {
+    // These should handle null safely
+    lane_mark_event(nullptr);
+    EXPECT_FALSE(lane_has_marked_event(nullptr));
+    lane_clear_marked_event(nullptr);
+}
+
+TEST_F(ThreadRegistryTest, lane_mark_event__concurrent_access__then_thread_safe) {
+    ThreadRegistry* c_registry = thread_registry_init(memory, memory_size);
+    ASSERT_NE(c_registry, nullptr);
+
+    ThreadLaneSet* lanes = thread_registry_register(c_registry, 12345);
+    ASSERT_NE(lanes, nullptr);
+
+    Lane* detail_lane = thread_lanes_get_detail_lane(lanes);
+    ASSERT_NE(detail_lane, nullptr);
+
+    std::atomic<bool> start_flag{false};
+    std::atomic<int> mark_count{0};
+    std::atomic<int> clear_count{0};
+
+    // Thread 1: Repeatedly mark the event
+    std::thread marker([&]() {
+        while (!start_flag.load()) {
+            std::this_thread::yield();
+        }
+        for (int i = 0; i < 1000; ++i) {
+            lane_mark_event(detail_lane);
+            mark_count.fetch_add(1);
+            std::this_thread::yield();
+        }
+    });
+
+    // Thread 2: Repeatedly clear the event
+    std::thread clearer([&]() {
+        while (!start_flag.load()) {
+            std::this_thread::yield();
+        }
+        for (int i = 0; i < 1000; ++i) {
+            lane_clear_marked_event(detail_lane);
+            clear_count.fetch_add(1);
+            std::this_thread::yield();
+        }
+    });
+
+    // Thread 3: Check the status
+    std::thread checker([&]() {
+        while (!start_flag.load()) {
+            std::this_thread::yield();
+        }
+        for (int i = 0; i < 2000; ++i) {
+            // Just verify it doesn't crash
+            bool has_marked = lane_has_marked_event(detail_lane);
+            (void)has_marked; // Use the value to avoid warnings
+            std::this_thread::yield();
+        }
+    });
+
+    // Start all threads
+    start_flag.store(true);
+
+    marker.join();
+    clearer.join();
+    checker.join();
+
+    // Verify operations completed
+    EXPECT_EQ(mark_count.load(), 1000);
+    EXPECT_EQ(clear_count.load(), 1000);
+}
+
+TEST_F(ThreadRegistryTest, lane_mark_event__multiple_lanes__then_independent) {
+    ThreadRegistry* c_registry = thread_registry_init(memory, memory_size);
+    ASSERT_NE(c_registry, nullptr);
+
+    // Create two separate thread lane sets
+    ThreadLaneSet* lanes1 = thread_registry_register(c_registry, 11111);
+    ThreadLaneSet* lanes2 = thread_registry_register(c_registry, 22222);
+
+    ASSERT_NE(lanes1, nullptr);
+    ASSERT_NE(lanes2, nullptr);
+
+    Lane* detail_lane1 = thread_lanes_get_detail_lane(lanes1);
+    Lane* detail_lane2 = thread_lanes_get_detail_lane(lanes2);
+
+    ASSERT_NE(detail_lane1, nullptr);
+    ASSERT_NE(detail_lane2, nullptr);
+
+    // Mark lane1 but not lane2
+    lane_mark_event(detail_lane1);
+
+    // Verify independence
+    EXPECT_TRUE(lane_has_marked_event(detail_lane1));
+    EXPECT_FALSE(lane_has_marked_event(detail_lane2));
+
+    // Mark lane2
+    lane_mark_event(detail_lane2);
+
+    // Both should be marked
+    EXPECT_TRUE(lane_has_marked_event(detail_lane1));
+    EXPECT_TRUE(lane_has_marked_event(detail_lane2));
+
+    // Clear lane1
+    lane_clear_marked_event(detail_lane1);
+
+    // Verify independence again
+    EXPECT_FALSE(lane_has_marked_event(detail_lane1));
+    EXPECT_TRUE(lane_has_marked_event(detail_lane2));
+}
