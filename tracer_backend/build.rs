@@ -239,6 +239,9 @@ fn main() {
         ("build/test_controller_main", "test/test_controller_main"),
         ("build/tests/unit/controller/test_controller_main", "test/test_controller_main"),
         ("out/bin/test_controller_main", "test/test_controller_main"),
+        ("build/test_signal_shutdown", "test/test_signal_shutdown"),
+        ("build/tests/unit/controller/test_signal_shutdown", "test/test_signal_shutdown"),
+        ("out/bin/test_signal_shutdown", "test/test_signal_shutdown"),
         // Agent unit tests
         ("build/test_agent_state_machine", "test/test_agent_state_machine"),
         ("build/tests/unit/agent/test_agent_state_machine", "test/test_agent_state_machine"),

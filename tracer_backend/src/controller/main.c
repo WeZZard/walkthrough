@@ -1,5 +1,6 @@
 #include <tracer_backend/controller/frida_controller.h>
 #include <tracer_backend/controller/cli_usage.h>
+#include <tracer_backend/controller/shutdown.h>
 #include <tracer_backend/timer/timer.h>
 #include <math.h>
 #include <stdbool.h>
@@ -10,20 +11,36 @@
 #include <signal.h>
 
 static FridaController* g_controller = NULL;
-static volatile bool g_running = true;
+static ShutdownManager g_shutdown_manager;
+static ShutdownState g_shutdown_state;
+static SignalHandler g_signal_handler;
+static bool g_shutdown_initialized = false;
+static bool g_shutdown_handler_installed = false;
+static bool g_manager_registered = false;
 static bool g_timer_initialized = false;
 static bool g_timer_started = false;
+static bool g_shutdown_announced = false;
 
-void signal_handler(int sig) {
-    printf("\nReceived signal %d, shutting down...\n", sig);
-    g_running = false;
-    timer_cancel();
-}
+static void announce_shutdown_if_needed(ShutdownReason reason) {
+    if (g_shutdown_announced) {
+        return;
+    }
 
-void shutdown_initiate(void) {
-    printf("\nDuration elapsed, initiating shutdown...\n");
-    g_running = false;
-    timer_cancel();
+    switch (reason) {
+        case SHUTDOWN_REASON_SIGNAL:
+            printf("\nReceived shutdown signal, shutting down...\n");
+            break;
+        case SHUTDOWN_REASON_TIMER:
+            printf("\nDuration elapsed, initiating shutdown...\n");
+            break;
+        case SHUTDOWN_REASON_MANUAL:
+            printf("\nShutdown requested, stopping...\n");
+            break;
+        default:
+            return;
+    }
+
+    g_shutdown_announced = true;
 }
 
 void print_usage(const char* program) {
@@ -45,6 +62,7 @@ int main(int argc, char* argv[]) {
     }
 
     int exit_code = 0;
+    g_shutdown_announced = false;
 
     const char* mode = argv[1];
     const char* target = argv[2];
@@ -73,9 +91,34 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Setup signal handlers
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    if (!g_shutdown_initialized) {
+        shutdown_state_init(&g_shutdown_state, MAX_THREADS);
+        if (shutdown_manager_init(&g_shutdown_manager,
+                                  &g_shutdown_state,
+                                  NULL,
+                                  NULL,
+                                  NULL) != 0) {
+            fprintf(stderr, "Failed to initialize shutdown manager\n");
+            exit_code = 1;
+            goto cleanup;
+        }
+        g_shutdown_initialized = true;
+    }
+
+    if (!g_manager_registered) {
+        shutdown_manager_register_global(&g_shutdown_manager);
+        g_manager_registered = true;
+    }
+
+    if (!g_shutdown_handler_installed) {
+        if (signal_handler_init(&g_signal_handler, &g_shutdown_manager) != 0 ||
+            signal_handler_install(&g_signal_handler) != 0) {
+            fprintf(stderr, "Failed to install shutdown signal handlers\n");
+            exit_code = 1;
+            goto cleanup;
+        }
+        g_shutdown_handler_installed = true;
+    }
     
     printf("=== ADA Tracer POC ===\n");
     printf("Output directory: %s\n", output_dir);
@@ -206,7 +249,7 @@ int main(int argc, char* argv[]) {
     printf("Press Ctrl+C to stop\n\n");
 
     int tick = 0;
-    while (g_running) {
+    while (!shutdown_manager_is_shutdown_requested(&g_shutdown_manager)) {
         sleep(1);
         tick++;
         
@@ -222,14 +265,25 @@ int main(int argc, char* argv[]) {
         ProcessState state = frida_controller_get_state(g_controller);
         if (state != PROCESS_STATE_RUNNING && state != PROCESS_STATE_ATTACHED) {
             printf("Process has terminated\n");
+            if (shutdown_manager_request_shutdown(&g_shutdown_manager,
+                                                  SHUTDOWN_REASON_MANUAL,
+                                                  0)) {
+                announce_shutdown_if_needed(SHUTDOWN_REASON_MANUAL);
+            }
             break;
         }
 
         if (duration_specified && g_timer_started && !timer_is_active()) {
-            printf("Duration expired\n");
+            if (shutdown_manager_request_shutdown(&g_shutdown_manager,
+                                                  SHUTDOWN_REASON_TIMER,
+                                                  0)) {
+                announce_shutdown_if_needed(SHUTDOWN_REASON_TIMER);
+            }
             break;
         }
     }
+
+    announce_shutdown_if_needed((ShutdownReason)shutdown_manager_get_last_reason(&g_shutdown_manager));
 
     // Detach and cleanup
     printf("\nDetaching from process...\n");
@@ -245,6 +299,21 @@ int main(int argc, char* argv[]) {
     
     // Cleanup
 cleanup:
+    if (g_shutdown_initialized &&
+        !shutdown_manager_is_shutdown_complete(&g_shutdown_manager)) {
+        shutdown_manager_execute(&g_shutdown_manager);
+    }
+
+    if (g_shutdown_handler_installed) {
+        signal_handler_uninstall(&g_signal_handler);
+        g_shutdown_handler_installed = false;
+    }
+
+    if (g_manager_registered) {
+        shutdown_manager_unregister_global();
+        g_manager_registered = false;
+    }
+
     if (g_timer_initialized) {
         if (g_timer_started && timer_is_active()) {
             timer_cancel();

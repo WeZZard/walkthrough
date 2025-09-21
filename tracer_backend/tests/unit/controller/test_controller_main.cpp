@@ -16,11 +16,7 @@ size_t controller_main_test_get_format_usage_call_count(void);
 int controller_main_test_get_fputs_call_count(void);
 const char *controller_main_test_get_fputs_payload(void);
 int controller_main_test_get_timer_cancel_calls(void);
-bool controller_main_test_get_running(void);
-void controller_main_test_set_running(bool value);
-void signal_handler(int sig);
 void print_usage(const char *program);
-void shutdown_initiate(void);
 int controller_main_entry(int argc, char *argv[]);
 
 void controller_main_test_set_timer_init_result(int value);
@@ -56,9 +52,19 @@ void controller_main_test_set_frida_stats_sequence(const TracerStats *stats,
 const char *controller_main_test_get_last_system_command(void);
 int controller_main_test_get_system_calls(void);
 void controller_main_test_set_system_result(int value);
+
+void controller_main_test_set_shutdown_manager_init_result(int value);
+void controller_main_test_set_signal_handler_init_result(int value);
+void controller_main_test_set_signal_handler_install_result(int value);
+int controller_main_test_get_printf_call_count(void);
+int controller_main_test_get_fprintf_call_count(void);
+const char* controller_main_test_get_last_fprintf_format(void);
+void controller_main_test_set_shutdown_manager_get_last_reason(int value);
+void controller_main_test_set_shutdown_manager_is_shutdown_requested(bool value);
 }
 
 using ::testing::HasSubstr;
+using ::testing::Not;
 using ::testing::StrEq;
 
 namespace {
@@ -80,30 +86,6 @@ int invoke_main(std::initializer_list<const char *> args) {
   return invoke_main_with_vector(std::move(owned));
 }
 } // namespace
-
-TEST(main__signal_handler__then_cancels_timer, behavior) {
-  controller_main_test_reset_state();
-  controller_main_test_set_running(true);
-
-  testing::internal::CaptureStdout();
-  signal_handler(SIGINT);
-  testing::internal::GetCapturedStdout();
-
-  EXPECT_FALSE(controller_main_test_get_running());
-  EXPECT_EQ(controller_main_test_get_timer_cancel_calls(), 1);
-}
-
-TEST(main__shutdown_initiate__then_stops_running_and_cancels_timer, behavior) {
-  controller_main_test_reset_state();
-  controller_main_test_set_running(true);
-
-  testing::internal::CaptureStdout();
-  shutdown_initiate();
-  testing::internal::GetCapturedStdout();
-
-  EXPECT_FALSE(controller_main_test_get_running());
-  EXPECT_EQ(controller_main_test_get_timer_cancel_calls(), 1);
-}
 
 TEST(main__print_usage_success__then_forwards_buffer_to_fputs, behavior) {
   controller_main_test_reset_state();
@@ -250,7 +232,9 @@ TEST(main__cleanup_active_timer__then_cancels_during_cleanup, behavior) {
   testing::internal::GetCapturedStdout();
 
   EXPECT_EQ(exit_code, 0);
-  EXPECT_EQ(controller_main_test_get_timer_cancel_calls(), 1);
+  // Shutdown manager cancels the timer when the stop request is observed and
+  // cleanup performs a second cancellation to finish the timer thread.
+  EXPECT_EQ(controller_main_test_get_timer_cancel_calls(), 2);
   EXPECT_EQ(controller_main_test_get_timer_cleanup_calls(), 1);
 }
 
@@ -418,4 +402,102 @@ TEST(main__successful_spawn_with_duration__then_detaches_and_cleans_up,
   EXPECT_THAT(out, HasSubstr("=== Final Statistics ==="));
   EXPECT_EQ(controller_main_test_get_frida_detach_calls(), 1);
   EXPECT_EQ(controller_main_test_get_timer_cleanup_calls(), 1);
+}
+
+TEST(main__shutdown_manager_init_fails__then_reports_error_and_exits, behavior) {
+  controller_main_test_reset_state();
+  controller_main_test_set_shutdown_manager_init_result(-1);
+
+  testing::internal::CaptureStderr();
+  int exit_code = invoke_main({"prog", "spawn", "target"});
+  std::string err = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(exit_code, 1);
+  EXPECT_THAT(err, HasSubstr("Failed to initialize shutdown manager"));
+  EXPECT_EQ(controller_main_test_get_fprintf_call_count(), 1);
+  EXPECT_THAT(std::string(controller_main_test_get_last_fprintf_format()),
+              HasSubstr("Failed to initialize shutdown manager"));
+}
+
+TEST(main__signal_handler_init_fails__then_reports_error_and_exits, behavior) {
+  controller_main_test_reset_state();
+  controller_main_test_set_signal_handler_init_result(-1);
+
+  testing::internal::CaptureStderr();
+  int exit_code = invoke_main({"prog", "spawn", "target"});
+  std::string err = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(exit_code, 1);
+  EXPECT_THAT(err, HasSubstr("Failed to install shutdown signal handlers"));
+  EXPECT_EQ(controller_main_test_get_fprintf_call_count(), 1);
+  EXPECT_THAT(std::string(controller_main_test_get_last_fprintf_format()),
+              HasSubstr("Failed to install shutdown signal handlers"));
+}
+
+TEST(main__signal_handler_install_fails__then_reports_error_and_exits, behavior) {
+  controller_main_test_reset_state();
+  controller_main_test_set_signal_handler_install_result(-1);
+
+  testing::internal::CaptureStderr();
+  int exit_code = invoke_main({"prog", "spawn", "target"});
+  std::string err = testing::internal::GetCapturedStderr();
+
+  EXPECT_EQ(exit_code, 1);
+  EXPECT_THAT(err, HasSubstr("Failed to install shutdown signal handlers"));
+  EXPECT_EQ(controller_main_test_get_fprintf_call_count(), 1);
+  EXPECT_THAT(std::string(controller_main_test_get_last_fprintf_format()),
+              HasSubstr("Failed to install shutdown signal handlers"));
+}
+
+TEST(main__shutdown_signal_received__then_prints_signal_announcement, behavior) {
+  controller_main_test_reset_state();
+  controller_main_test_set_sleep_break_after(1);
+  // Set the last reason to SHUTDOWN_REASON_SIGNAL (1)
+  controller_main_test_set_shutdown_manager_get_last_reason(1);
+  controller_main_test_set_shutdown_manager_is_shutdown_requested(true);
+
+  // Simulate process running then receiving shutdown signal
+  testing::internal::CaptureStdout();
+  int exit_code = invoke_main({"prog", "spawn", "target"});
+  std::string out = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(exit_code, 0);
+  EXPECT_GT(controller_main_test_get_printf_call_count(), 0);
+  EXPECT_THAT(out, HasSubstr("Received shutdown signal, shutting down"));
+}
+
+TEST(main__timer_elapsed__then_prints_timer_announcement, behavior) {
+  controller_main_test_reset_state();
+  // Timer becomes inactive after being active
+  bool timer_sequence[] = {false}; // Timer expired
+  controller_main_test_set_timer_is_active_sequence(timer_sequence, 1);
+
+  std::vector<std::string> args = {"prog", "spawn", "target", "--duration", "1.0"};
+
+  testing::internal::CaptureStdout();
+  int exit_code = invoke_main_with_vector(args);
+  std::string out = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(exit_code, 0);
+  EXPECT_GT(controller_main_test_get_printf_call_count(), 0);
+  EXPECT_THAT(out, HasSubstr("Duration elapsed, initiating shutdown"));
+}
+
+TEST(main__invalid_shutdown_reason__then_no_announcement_printed, behavior) {
+  controller_main_test_reset_state();
+  controller_main_test_set_sleep_break_after(1);
+  // Set an invalid/unknown shutdown reason (99)
+  controller_main_test_set_shutdown_manager_get_last_reason(99);
+  controller_main_test_set_shutdown_manager_is_shutdown_requested(true);
+
+  // Simulate process running with unknown shutdown reason
+  testing::internal::CaptureStdout();
+  int exit_code = invoke_main({"prog", "spawn", "target"});
+  std::string out = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(exit_code, 0);
+  // Should not print any shutdown announcement for unknown reason
+  EXPECT_THAT(out, Not(HasSubstr("shutting down")));
+  EXPECT_THAT(out, Not(HasSubstr("initiating shutdown")));
+  EXPECT_THAT(out, Not(HasSubstr("stopping")));
 }

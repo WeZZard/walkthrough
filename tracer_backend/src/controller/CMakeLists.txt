@@ -18,6 +18,7 @@ endif()
 # CLI helpers
 add_library(tracer_controller_cli STATIC
     cli_usage.c
+    shutdown.c
 )
 
 set_target_properties(tracer_controller_cli PROPERTIES
@@ -32,6 +33,13 @@ target_include_directories(tracer_controller_cli
 target_compile_features(tracer_controller_cli
     PUBLIC
         c_std_11
+)
+
+target_link_libraries(tracer_controller_cli
+    PUBLIC
+        tracer_utils
+        tracer_drain_thread
+        tracer_atf_writer
 )
 
 # Controller library

@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <tracer_backend/controller/cli_usage.h>
+#include <tracer_backend/controller/shutdown.h>
 #include <tracer_backend/utils/tracer_types.h>
 
 #define TIMER_SEQUENCE_MAX 16
@@ -67,6 +69,18 @@ typedef struct {
   size_t stats_len;
   size_t stats_index;
   TracerStats stats_default;
+
+  int shutdown_manager_init_result;
+  int signal_handler_init_result;
+  int signal_handler_install_result;
+
+  int printf_call_count;
+  int fprintf_call_count;
+  char last_printf_format[256];
+  char last_fprintf_format[256];
+
+  int shutdown_manager_get_last_reason_result;
+  bool shutdown_manager_is_shutdown_requested_result;
 } ControllerMainTestState;
 
 static const ControllerMainTestState kDefaultTestState = {
@@ -108,6 +122,15 @@ static const ControllerMainTestState kDefaultTestState = {
     .stats_len = 0,
     .stats_index = 0,
     .stats_default = {0},
+    .shutdown_manager_init_result = 0,
+    .signal_handler_init_result = 0,
+    .signal_handler_install_result = 0,
+    .printf_call_count = 0,
+    .fprintf_call_count = 0,
+    .last_printf_format = {0},
+    .last_fprintf_format = {0},
+    .shutdown_manager_get_last_reason_result = 0,
+    .shutdown_manager_is_shutdown_requested_result = false,
 };
 
 static ControllerMainTestState g_test_state = {
@@ -149,6 +172,15 @@ static ControllerMainTestState g_test_state = {
     .stats_len = 0,
     .stats_index = 0,
     .stats_default = {0},
+    .shutdown_manager_init_result = 0,
+    .signal_handler_init_result = 0,
+    .signal_handler_install_result = 0,
+    .printf_call_count = 0,
+    .fprintf_call_count = 0,
+    .last_printf_format = {0},
+    .last_fprintf_format = {0},
+    .shutdown_manager_get_last_reason_result = 0,
+    .shutdown_manager_is_shutdown_requested_result = false,
 };
 
 static bool controller_main_test_consume_timer_is_active(void) {
@@ -304,22 +336,55 @@ int controller_test_system(const char *command) {
 
 unsigned int controller_test_sleep(unsigned int seconds);
 
+int controller_test_shutdown_manager_init(ShutdownManager* manager,
+                                          ShutdownState* state,
+                                          ThreadRegistry* registry,
+                                          DrainThread* drain,
+                                          const ShutdownOps* ops);
+int controller_test_signal_handler_init(SignalHandler* handler,
+                                        ShutdownManager* manager);
+int controller_test_signal_handler_install(SignalHandler* handler);
+int controller_test_printf(const char* format, ...);
+int controller_test_fprintf(FILE* stream, const char* format, ...);
+int controller_test_shutdown_manager_get_last_reason(const ShutdownManager* manager);
+bool controller_test_shutdown_manager_is_shutdown_requested(const ShutdownManager* manager);
+
 #define fputs controller_test_fputs
 #define system controller_test_system
 #define sleep controller_test_sleep
 #define main controller_main_entry
+#define shutdown_manager_init controller_test_shutdown_manager_init
+#define signal_handler_init controller_test_signal_handler_init
+#define signal_handler_install controller_test_signal_handler_install
+#define printf controller_test_printf
+#define fprintf controller_test_fprintf
+#define shutdown_manager_get_last_reason controller_test_shutdown_manager_get_last_reason
+#define shutdown_manager_is_shutdown_requested controller_test_shutdown_manager_is_shutdown_requested
 #include "../../../src/controller/main.c"
 #undef main
 #undef sleep
 #undef system
 #undef fputs
+#undef shutdown_manager_init
+#undef signal_handler_init
+#undef signal_handler_install
+#undef printf
+#undef fprintf
+#undef shutdown_manager_get_last_reason
+#undef shutdown_manager_is_shutdown_requested
 
 unsigned int controller_test_sleep(unsigned int seconds) {
   (void)seconds;
   g_test_state.sleep_calls++;
   if (g_test_state.sleep_break_after > 0 &&
       g_test_state.sleep_calls >= g_test_state.sleep_break_after) {
-    g_running = false;
+    if (g_shutdown_initialized) {
+      if (shutdown_manager_request_shutdown(&g_shutdown_manager,
+                                            SHUTDOWN_REASON_MANUAL,
+                                            0)) {
+        announce_shutdown_if_needed(SHUTDOWN_REASON_MANUAL);
+      }
+    }
   }
   return 0;
 }
@@ -332,7 +397,13 @@ void controller_main_test_reset_state(void) {
   g_format_usage_payload[0] = '\0';
   g_fputs_call_count = 0;
   g_fputs_payload[0] = '\0';
-  g_running = true;
+  memset(&g_shutdown_manager, 0, sizeof(g_shutdown_manager));
+  memset(&g_shutdown_state, 0, sizeof(g_shutdown_state));
+  memset(&g_signal_handler, 0, sizeof(g_signal_handler));
+  g_shutdown_initialized = false;
+  g_shutdown_handler_installed = false;
+  g_manager_registered = false;
+  g_shutdown_announced = false;
 }
 
 void controller_main_test_set_format_usage(size_t return_value,
@@ -362,10 +433,6 @@ const char *controller_main_test_get_fputs_payload(void) {
 int controller_main_test_get_timer_cancel_calls(void) {
   return g_test_state.timer_cancel_calls;
 }
-
-bool controller_main_test_get_running(void) { return g_running; }
-
-void controller_main_test_set_running(bool value) { g_running = value; }
 
 void controller_main_test_set_timer_init_result(int value) {
   g_test_state.timer_init_result = value;
@@ -518,4 +585,113 @@ void controller_main_test_set_frida_detach_result(int value) {
 
 void controller_main_test_set_timer_cancel_result(int value) {
   g_test_state.timer_cancel_result = value;
+}
+
+int controller_test_shutdown_manager_init(ShutdownManager* manager,
+                                          ShutdownState* state,
+                                          ThreadRegistry* registry,
+                                          DrainThread* drain,
+                                          const ShutdownOps* ops) {
+  if (g_test_state.shutdown_manager_init_result != 0) {
+    return g_test_state.shutdown_manager_init_result;
+  }
+  // Call the real function
+  return shutdown_manager_init(manager, state, registry, drain, ops);
+}
+
+int controller_test_signal_handler_init(SignalHandler* handler,
+                                        ShutdownManager* manager) {
+  if (g_test_state.signal_handler_init_result != 0) {
+    return g_test_state.signal_handler_init_result;
+  }
+  // Call the real function
+  return signal_handler_init(handler, manager);
+}
+
+int controller_test_signal_handler_install(SignalHandler* handler) {
+  if (g_test_state.signal_handler_install_result != 0) {
+    return g_test_state.signal_handler_install_result;
+  }
+  // Call the real function
+  return signal_handler_install(handler);
+}
+
+int controller_test_printf(const char* format, ...) {
+  g_test_state.printf_call_count++;
+  if (format != NULL) {
+    strncpy(g_test_state.last_printf_format, format,
+            sizeof(g_test_state.last_printf_format) - 1);
+    g_test_state.last_printf_format[sizeof(g_test_state.last_printf_format) - 1] = '\0';
+  }
+  // Still print to stdout for test visibility
+  va_list args;
+  va_start(args, format);
+  int result = vprintf(format, args);
+  va_end(args);
+  return result;
+}
+
+int controller_test_fprintf(FILE* stream, const char* format, ...) {
+  g_test_state.fprintf_call_count++;
+  if (format != NULL) {
+    strncpy(g_test_state.last_fprintf_format, format,
+            sizeof(g_test_state.last_fprintf_format) - 1);
+    g_test_state.last_fprintf_format[sizeof(g_test_state.last_fprintf_format) - 1] = '\0';
+  }
+  // Still print to the stream for test visibility
+  va_list args;
+  va_start(args, format);
+  int result = vfprintf(stream, format, args);
+  va_end(args);
+  return result;
+}
+
+void controller_main_test_set_shutdown_manager_init_result(int value) {
+  g_test_state.shutdown_manager_init_result = value;
+}
+
+void controller_main_test_set_signal_handler_init_result(int value) {
+  g_test_state.signal_handler_init_result = value;
+}
+
+void controller_main_test_set_signal_handler_install_result(int value) {
+  g_test_state.signal_handler_install_result = value;
+}
+
+int controller_main_test_get_printf_call_count(void) {
+  return g_test_state.printf_call_count;
+}
+
+int controller_main_test_get_fprintf_call_count(void) {
+  return g_test_state.fprintf_call_count;
+}
+
+const char* controller_main_test_get_last_fprintf_format(void) {
+  return g_test_state.last_fprintf_format;
+}
+
+int controller_test_shutdown_manager_get_last_reason(const ShutdownManager* manager) {
+  (void)manager;
+  if (g_test_state.shutdown_manager_get_last_reason_result != 0) {
+    return g_test_state.shutdown_manager_get_last_reason_result;
+  }
+  // Call the real function
+  return shutdown_manager_get_last_reason(manager);
+}
+
+bool controller_test_shutdown_manager_is_shutdown_requested(const ShutdownManager* manager) {
+  (void)manager;
+  if (g_test_state.shutdown_manager_is_shutdown_requested_result) {
+    return true;
+  }
+  // Call the real function
+  return shutdown_manager_is_shutdown_requested(manager);
+}
+
+void controller_main_test_set_shutdown_manager_get_last_reason(int value) {
+  g_test_state.shutdown_manager_get_last_reason_result = value;
+}
+
+void controller_main_test_set_shutdown_manager_is_shutdown_requested(bool value) {
+  g_test_state.shutdown_manager_is_shutdown_requested_result = value;
 }
