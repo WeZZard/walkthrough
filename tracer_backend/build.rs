@@ -667,6 +667,18 @@ fn main() {
             "out/bin/test_docs_integration",
             "test/test_docs_integration",
         ),
+        (
+            "build/test_examples_integration",
+            "test/test_examples_integration",
+        ),
+        (
+            "build/tests/integration/examples/test_examples_integration",
+            "test/test_examples_integration",
+        ),
+        (
+            "out/bin/test_examples_integration",
+            "test/test_examples_integration",
+        ),
         // Registry benchmark tests
         ("build/test_registry_bench", "test/test_registry_bench"),
         (

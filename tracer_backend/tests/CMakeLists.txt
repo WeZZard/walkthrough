@@ -84,6 +84,7 @@ add_subdirectory(integration/selective_persistence)
 add_subdirectory(integration/metrics)
 add_subdirectory(integration/system)
 add_subdirectory(integration/docs)
+add_subdirectory(integration/examples)
 
 # Benchmark tests (when available)
 add_subdirectory(bench/utils)
