@@ -1,0 +1,18 @@
+#ifndef TRACER_BACKEND_DOCS_COMMON_H
+#define TRACER_BACKEND_DOCS_COMMON_H
+
+#include <stdint.h>
+
+// Performance budgets captured in specification (nanoseconds)
+#define TRACER_DOC_GENERATION_BUDGET_NS UINT64_C(100000000)
+#define TRACER_EXAMPLE_EXECUTION_BUDGET_NS UINT64_C(500000000)
+
+typedef enum tracer_docs_status {
+    TRACER_DOCS_STATUS_OK = 0,
+    TRACER_DOCS_STATUS_INVALID_ARGUMENT = -1,
+    TRACER_DOCS_STATUS_BUSY = -2,
+    TRACER_DOCS_STATUS_IO_ERROR = -3,
+    TRACER_DOCS_STATUS_UNSUPPORTED = -4
+} tracer_docs_status_t;
+
+#endif // TRACER_BACKEND_DOCS_COMMON_H

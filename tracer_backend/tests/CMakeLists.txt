@@ -71,6 +71,7 @@ add_subdirectory(unit/atf_v4)
 add_subdirectory(unit/cli_parser)
 add_subdirectory(unit/selective_persistence)
 add_subdirectory(unit/metrics)
+add_subdirectory(unit/docs)
 
 # Integration tests
 add_subdirectory(integration/utils)
@@ -82,6 +83,7 @@ add_subdirectory(integration/atf_v4)
 add_subdirectory(integration/selective_persistence)
 add_subdirectory(integration/metrics)
 add_subdirectory(integration/system)
+add_subdirectory(integration/docs)
 
 # Benchmark tests (when available)
 add_subdirectory(bench/utils)

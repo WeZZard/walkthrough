@@ -642,6 +642,31 @@ fn main() {
             "out/bin/test_system_integration",
             "test/test_system_integration",
         ),
+        // Docs tests
+        (
+            "build/test_docs_unit",
+            "test/test_docs_unit",
+        ),
+        (
+            "build/tests/unit/docs/test_docs_unit",
+            "test/test_docs_unit",
+        ),
+        (
+            "out/bin/test_docs_unit",
+            "test/test_docs_unit",
+        ),
+        (
+            "build/test_docs_integration",
+            "test/test_docs_integration",
+        ),
+        (
+            "build/tests/integration/docs/test_docs_integration",
+            "test/test_docs_integration",
+        ),
+        (
+            "out/bin/test_docs_integration",
+            "test/test_docs_integration",
+        ),
         // Registry benchmark tests
         ("build/test_registry_bench", "test/test_registry_bench"),
         (
