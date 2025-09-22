@@ -11,12 +11,16 @@ name = "query_engine"
 # "rlib" for Rust dependencies only - maturin will handle Python extension
 crate-type = ["rlib"]
 
+[[bin]]
+name = "query_engine"
+path = "src/bin/query_engine.rs"
+
 [dependencies]
 pyo3 = { version = "0.22", features = ["abi3-py39"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hyper = { version = "0.14", features = ["full"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "fs", "io-util", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "fs", "io-util", "time", "signal", "process"] }
 async-trait = "0.1"
 parking_lot = "0.12"
 dashmap = "5"
@@ -27,10 +31,14 @@ md5 = "0.7"
 bytes = "1.5"
 prost = "0.12"
 prost-types = "0.12"
+clap = { version = "4.5", features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
 [dev-dependencies]
+libc = "0.2"
 tempfile = "3.10"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "fs", "io-util", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "fs", "io-util", "time", "signal"] }
 
 [features]
 default = []

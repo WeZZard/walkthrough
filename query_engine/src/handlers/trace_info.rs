@@ -724,8 +724,7 @@ mod tests {
     #[test]
     fn trace_info_handler_register__then_handler_present_in_registry() {
         let server = JsonRpcServer::new();
-        TraceInfoHandler::new(PathBuf::from("/tmp"), 4, Duration::from_secs(60))
-            .register(&server);
+        TraceInfoHandler::new(PathBuf::from("/tmp"), 4, Duration::from_secs(60)).register(&server);
 
         assert!(server.handler_registry().contains("trace.info"));
     }

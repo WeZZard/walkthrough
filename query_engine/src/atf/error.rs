@@ -64,7 +64,10 @@ mod tests {
     #[test]
     fn atf_error__io_constructor__then_preserves_path_and_source() {
         let source = io::Error::new(io::ErrorKind::Other, "kaboom");
-        let err = AtfError::io("/tmp/trace.json", io::Error::new(source.kind(), source.to_string()));
+        let err = AtfError::io(
+            "/tmp/trace.json",
+            io::Error::new(source.kind(), source.to_string()),
+        );
 
         let message = err.to_string();
         match &err {

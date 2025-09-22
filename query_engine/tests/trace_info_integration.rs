@@ -25,7 +25,11 @@ async fn trace_info_handler_integration__base_request__then_returns_response() {
         "bytesWritten": 2048,
         "modules": ["libfoo.so"],
     });
-    fs::write(trace_dir.join("trace.json"), serde_json::to_vec(&manifest).expect("bytes")).expect("manifest");
+    fs::write(
+        trace_dir.join("trace.json"),
+        serde_json::to_vec(&manifest).expect("bytes"),
+    )
+    .expect("manifest");
     fs::write(trace_dir.join("events.bin"), &[1, 2, 3, 4, 5]).expect("events");
 
     let handler = TraceInfoHandler::new(temp.path().to_path_buf(), 8, Duration::from_secs(30));

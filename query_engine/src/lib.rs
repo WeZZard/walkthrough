@@ -1,3 +1,4 @@
+pub mod app;
 pub mod atf;
 pub mod handlers;
 pub mod server;
