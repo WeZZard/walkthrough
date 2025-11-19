@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## Project Overview
+
+ADA (AI Agent Debugging Architecture) is a high-performance tracing system designed for debugging AI agents with minimal overhead and token-budget-aware analysis. The system provides a dual-lane flight recorder architecture:
+
+- **Index Lane**: Always-on lightweight event capture
+- **Detail Lane**: Selective persistence of rich debugging data  
+- **Token-Budget-Aware**: Optimized for LLM context window constraints
+
 ## Project Structure & Modules
 
 Core components and critical directories:
@@ -67,34 +75,206 @@ project-root/
 └── target/                      # Build outputs (git-ignored)
 ```
 
+## Technology Stack
+
+### Core Components
+- **tracer**: Rust control plane for trace management
+- **tracer_backend**: High-performance C/C++ data plane with modular architecture
+- **query_engine**: Python-based token-budget-aware analysis with PyO3 Rust bindings
+- **mcp_server**: Model Context Protocol interface for AI agent integration
+
+### Build System
+- **Cargo workspace**: Orchestrates all builds from root Cargo.toml
+- **CMake**: Builds C/C++ components via tracer_backend/build.rs
+- **Maturin**: Builds Python extensions with Rust bindings
+- **GoogleTest**: C++ testing framework
+- **Pytest**: Python testing framework
+
 ## Build, Test, and Dev Commands
 
-- Build all: `cargo build --release`
-- Test all crates: `cargo test --all`
-- Coverage dashboard: `./utils/run_coverage.sh`
-- Install hooks: `./utils/install_hooks.sh` (pre‑commit quality gates)
-- Query engine (optional local dev): `maturin develop -m query_engine/Cargo.toml` then `pytest -q` in `query_engine/`
-- MCP server (optional): `pip install -e mcp_server[dev]` then `pytest -q` in `mcp_server/`
+### Essential Commands
+```bash
+# Build all components
+cargo build --release
+
+# Test all crates
+cargo test --all
+
+# Generate coverage reports
+./utils/run_coverage.sh
+
+# Install quality gate hooks (MANDATORY)
+./utils/install_hooks.sh
+
+# Initialize third-party dependencies (Frida SDK)
+./utils/init_third_parties.sh
+```
+
+### Development Commands
+```bash
+# Query engine local development
+maturin develop -m query_engine/Cargo.toml
+cd query_engine && pytest -q
+
+# MCP server development
+pip install -e mcp_server[dev]
+cd mcp_server && pytest -q
+
+# Coverage dashboard
+./utils/run_coverage.sh
+
+# Individual component testing
+cargo test -p tracer
+cargo test -p tracer_backend
+cargo test -p query_engine
+```
 
 ## Coding Style & Naming
 
-- Rust: `rustfmt` defaults; lint with `cargo clippy -- -D warnings`. Files/Modules: `snake_case`.
-- Python: `black` (88 cols), `ruff`, `mypy` (no untyped defs). Packages/files: `snake_case`.
-- C/C++: `clang-format` (LLVM style if unspecified). Files: `snake_case.{c,cpp,h}`.
-- Keep functions small, explicit errors via `anyhow/thiserror` (Rust) and status returns (C/C++).
+### Rust
+- **Formatting**: `rustfmt` defaults
+- **Linting**: `cargo clippy -- -D warnings`
+- **Files/Modules**: `snake_case`
+- **Error Handling**: Use `anyhow`/`thiserror` for explicit errors
+
+### Python  
+- **Formatting**: `black` (88 columns)
+- **Linting**: `ruff`
+- **Type Checking**: `mypy` (no untyped defs)
+- **Packages/Files**: `snake_case`
+- **Dependencies**: numpy, pandas, orjson for query_engine
+
+### C/C++
+- **Formatting**: `clang-format` (LLVM style)
+- **Files**: `snake_case.{c,cpp,h}`
+- **Testing**: GoogleTest with behavioral naming: `component__case__then_expected`
+- **Headers**: Public headers in `include/tracer_backend/`, private headers as `*_private.h`
+
+### General Principles
+- Keep functions small and focused
+- Use explicit error handling
+- Follow existing patterns in each component
+- Maintain modular architecture in tracer_backend
 
 ## Testing Guidelines
 
-- Rust: unit in `src` with `#[cfg(test)]`; integration in `tests/`. Run with `cargo test`.
-- C++: GoogleTest in `tracer_backend/tests/`; prefer behavioral names like `component__case__then_expected`.
-- Python: `pytest` with files `tests/test_*.py`. Coverage on changed lines must be 100% (see coverage script).
+### Rust
+- **Unit tests**: In `src` with `#[cfg(test)]`
+- **Integration tests**: In `tests/` directory
+- **Run with**: `cargo test`
+- **Coverage**: 100% on changed lines required
 
-## Commit & Pull Request Guidelines
+### C++
+- **Framework**: GoogleTest in `tracer_backend/tests/`
+- **Test types**: unit/, integration/, bench/
+- **Naming**: Behavioral names like `component__case__then_expected`
+- **Structure**: Modular organization matching src/ structure
 
-- Use Conventional Commits: `feat:`, `fix:`, `refactor(scope):`, `test:`, `docs:`, `chore:`.
-- PRs must: describe changes, link issues, include tests, pass CI, and keep coverage at 100% on changed lines. Add logs/screenshots for trace‑related changes.
+### Python
+- **Framework**: `pytest` with files `tests/test_*.py`
+- **Coverage**: 100% on changed lines required
+- **Configuration**: Defined in pyproject.toml
+
+### Quality Requirements
+- **Build Success**: 100% (all components must build)
+- **Test Success**: 100% (all tests must pass)  
+- **Coverage**: 100% on changed lines
+- **Integration Score**: 100/100
+- **No Bypass**: Quality gates enforced via pre-commit hooks
 
 ## Security & Platform Notes
 
-- macOS tracing may require entitlements/signing; see `docs/specs/PLATFORM_SECURITY_REQUIREMENTS.md`.
-- Tests set `ADA_WORKSPACE_ROOT`/`ADA_BUILD_PROFILE` automatically; avoid hard‑coding paths.
+### macOS Development (CRITICAL)
+- **Apple Developer Certificate ($99/year) REQUIRED** - NO EXCEPTIONS
+- Required for ALL testing and development
+- Frida requires proper code signing for dynamic instrumentation
+- Tests will fail without proper signing, even locally
+- See `docs/specs/PLATFORM_SECURITY_REQUIREMENTS.md` for setup
+
+### Linux Development
+- May require ptrace capabilities
+- See platform-specific setup in Getting Started guide
+
+### General Security
+- Frida SDK integration for dynamic instrumentation
+- Code signing required for all development builds
+- Proper entitlements required for macOS tracing
+
+## Development Workflow
+
+### Quality Gate Enforcement
+- **Pre-commit hooks**: Block commits that fail critical gates
+- **Post-commit hooks**: Generate coverage reports in background
+- **No bypassing**: `--no-verify` explicitly disallowed per CLAUDE.md
+- **Critical Gates**:
+  - Build must succeed
+  - All tests must pass
+  - No incomplete implementations (todo!/assert(0)/etc)
+  - Changed code must have ≥80% coverage (100% preferred)
+
+### Documentation Structure
+```
+docs/
+├── business/                # Business analysis
+├── user_stories/           # User requirements  
+├── specs/                  # Technical specifications
+├── technical_insights/     # Deep technical analysis
+└── progress_trackings/     # Development workflow artifacts
+```
+
+### Commit & Pull Request Guidelines
+- **Conventional Commits**: `feat:`, `fix:`, `refactor(scope):`, `test:`, `docs:`, `chore:`
+- **PR Requirements**:
+  - Describe changes and link issues
+  - Include appropriate tests
+  - Pass CI with 100% quality gates
+  - Follow existing patterns and conventions
+  - Maintain 100% coverage on changed lines
+
+## Performance Considerations
+
+### tracer_backend (C/C++)
+- High-performance data plane with minimal overhead
+- Modular architecture for selective compilation
+- Thread-safe design with proper synchronization
+- Memory-mapped files for efficient I/O
+
+### tracer (Rust)
+- Async/await for concurrent operations
+- Lock-free data structures where possible
+- Memory-efficient trace storage
+- Cross-platform compatibility
+
+### query_engine (Python)
+- Token-budget-aware analysis algorithms
+- Efficient data structures (pandas, numpy)
+- Rust backend for performance-critical operations
+- Caching strategies for repeated queries
+
+## Dependencies & Third Parties
+
+### Required Dependencies
+- **Frida SDK**: Dynamic instrumentation (download via init_third_parties.sh)
+- **GoogleTest**: C++ testing framework (fetched automatically)
+- **PyO3**: Python-Rust bindings
+- **Tokio**: Async runtime for Rust
+
+### Workspace Dependencies
+- Common Rust dependencies managed in root Cargo.toml
+- CMake-based C++ dependency management
+- Python dependencies in pyproject.toml files
+- Version pinning for reproducible builds
+
+## Troubleshooting
+
+### Common Issues
+1. **macOS signing failures**: Ensure Apple Developer Certificate is properly configured
+2. **Frida SDK missing**: Run `./utils/init_third_parties.sh`
+3. **CMake errors**: Check CMake version (3.20+ required)
+4. **Python import errors**: Ensure maturin development install
+5. **Coverage failures**: Check coverage tool installation
+
+### Support
+- Documentation: See docs/ directory structure
+- Issues: Create GitHub issues for problems
+- Setup: Follow docs/GETTING_STARTED.md carefully

@@ -16,8 +16,8 @@ This is the developer who deploys and supervises the AI Agent. They need to unde
 
 The backbone represents the major stages of the debugging journey for both personas. The map is organized by these activities, with detailed stories for each persona hanging below them.
 
-| Setup & Configuration                | Environment & Permissions            | Execution & Tracing                  | Trace Analysis                       | Interactive Debugging & Exploration |
-| :----------------------------------- | :----------------------------------- | :----------------------------------- | :----------------------------------- | :---------------------------------- |
+| Setup & Configuration                | Environment & Permissions             | Execution & Tracing                   | Trace Analysis                       | Interactive Debugging & Exploration    |
+| :----------------------------------- | :------------------------------------ | :------------------------------------ | :----------------------------------- | :------------------------------------- |
 | *(Stories about starting a session)* | *(Stories about getting trace-ready)* | *(Stories about running the program)* | *(Stories about automated analysis)* | *(Stories about active investigation)* |
 
 ## 3. Detailed User Stories
