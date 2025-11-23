@@ -9,6 +9,14 @@
 extern "C" {
 #endif
 
+static inline void cb_set_hooks_ready(ControlBlock* cb, uint32_t ready) {
+    __atomic_store_n(&cb->hooks_ready, ready, __ATOMIC_RELEASE);
+}
+
+static inline uint32_t cb_get_hooks_ready(ControlBlock* cb) {
+    return __atomic_load_n(&cb->hooks_ready, __ATOMIC_ACQUIRE);
+}
+
 static inline void cb_set_registry_ready(ControlBlock* cb, uint32_t ready) {
     __atomic_store_n(&cb->registry_ready, ready, __ATOMIC_RELEASE);
 }
@@ -70,4 +78,3 @@ static inline uint64_t cb_get_fallback_events(ControlBlock* cb) {
 #endif
 
 #endif // CONTROL_BLOCK_IPC_H
-

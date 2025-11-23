@@ -29,6 +29,16 @@ namespace internal {
 // FridaController Implementation Class
 // ============================================================================
 
+struct StartupTimeoutConfig {
+    uint32_t startup_ms{3000};      // Base warm-up duration in ms
+    uint32_t per_symbol_ms{20};     // Per-symbol cost in ms
+    double   tolerance_pct{0.15};   // Fractional tolerance (e.g., 0.15 == 15%)
+    uint32_t override_ms{0};        // If > 0, use as fixed timeout
+
+    static StartupTimeoutConfig from_env();
+    uint32_t compute_timeout_ms(uint32_t symbol_count) const;
+};
+
 class FridaController {
 public:
     // Constructor/Destructor
@@ -146,6 +156,15 @@ private:
     // Event loop
     GMainLoop* main_loop_{nullptr};
     GMainContext* main_context_{nullptr};
+
+    // Startup timeout configuration (M1_E6_I1)
+    StartupTimeoutConfig startup_cfg_{};
+    uint32_t last_startup_timeout_ms_{0};
+
+    // Async script loading state (M1_E6_I1)
+    std::atomic<uint32_t> symbol_estimate_{0};
+    std::atomic<bool> has_symbol_estimate_{false};
+    GCancellable* script_cancellable_{nullptr};
     
     // Constants
     static constexpr size_t INDEX_LANE_SIZE = 32 * 1024 * 1024;   // 32MB

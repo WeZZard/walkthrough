@@ -42,6 +42,111 @@ static void frida_deinit_per_process() {
 }
 
 // ============================================================================
+// Startup timeout configuration helpers (M1_E6_I1)
+// ============================================================================
+
+StartupTimeoutConfig StartupTimeoutConfig::from_env() {
+    StartupTimeoutConfig cfg;
+
+    if (const char* env = getenv("ADA_STARTUP_WARM_UP_DURATION")) {
+        char* end = nullptr;
+        long v = strtol(env, &end, 10);
+        if (end != env && *end == '\0' && v > 0) {
+            cfg.startup_ms = static_cast<uint32_t>(v);
+        }
+    }
+
+    if (const char* env = getenv("ADA_STARTUP_PER_SYMBOL_COST")) {
+        char* end = nullptr;
+        long v = strtol(env, &end, 10);
+        if (end != env && *end == '\0' && v >= 0) {
+            cfg.per_symbol_ms = static_cast<uint32_t>(v);
+        }
+    }
+
+    if (const char* env = getenv("ADA_STARTUP_TIMEOUT_TOLERANCE")) {
+        char* end = nullptr;
+        double v = strtod(env, &end);
+        if (end != env && *end == '\0' && v >= 0.0) {
+            cfg.tolerance_pct = v;
+        }
+    }
+
+    if (const char* env = getenv("ADA_STARTUP_TIMEOUT")) {
+        char* end = nullptr;
+        long v = strtol(env, &end, 10);
+        if (end != env && *end == '\0' && v > 0) {
+            cfg.override_ms = static_cast<uint32_t>(v);
+        }
+    }
+
+    return cfg;
+}
+
+uint32_t StartupTimeoutConfig::compute_timeout_ms(uint32_t symbol_count) const {
+    if (override_ms > 0) {
+        return override_ms;
+    }
+
+    double estimated = static_cast<double>(startup_ms) +
+                       static_cast<double>(symbol_count) * static_cast<double>(per_symbol_ms);
+    double timeout = estimated * (1.0 + tolerance_pct);
+    if (timeout < 0.0) {
+        timeout = 0.0;
+    }
+    if (timeout > static_cast<double>(UINT32_MAX)) {
+        timeout = static_cast<double>(UINT32_MAX);
+    }
+    return static_cast<uint32_t>(timeout);
+}
+
+namespace {
+
+struct ScriptLoadContext {
+    GCancellable* cancellable;
+    GMainLoop* loop;
+    GError* error;
+    bool completed;
+    bool timed_out;
+};
+
+static void on_script_load_finished(GObject* source_object,
+                                    GAsyncResult* res,
+                                    gpointer user_data) {
+    auto* ctx = static_cast<ScriptLoadContext*>(user_data);
+    if (!ctx || ctx->completed) {
+        return;
+    }
+
+    FridaScript* script = FRIDA_SCRIPT(source_object);
+    frida_script_load_finish(script, res, &ctx->error);
+    ctx->completed = true;
+
+    if (ctx->loop && g_main_loop_is_running(ctx->loop)) {
+        g_main_loop_quit(ctx->loop);
+    }
+}
+
+static gboolean on_script_load_timeout_cb(gpointer user_data) {
+    auto* ctx = static_cast<ScriptLoadContext*>(user_data);
+    if (!ctx || ctx->completed) {
+        return G_SOURCE_REMOVE;
+    }
+
+    ctx->timed_out = true;
+    if (ctx->cancellable) {
+        g_cancellable_cancel(ctx->cancellable);
+    }
+    if (ctx->loop && g_main_loop_is_running(ctx->loop)) {
+        g_main_loop_quit(ctx->loop);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
+} // namespace
+
+// ============================================================================
 // Constructor/Destructor
 // ============================================================================
 
@@ -51,6 +156,9 @@ FridaController::FridaController(const std::string& output_dir)
     // Initialize state
     state_ = PROCESS_STATE_INITIALIZED;
     spawn_method_ = SpawnMethod::None;
+
+    // Load startup timeout configuration from environment
+    startup_cfg_ = StartupTimeoutConfig::from_env();
     
     // Create GLib main context and loop
     main_context_ = g_main_context_new();
@@ -287,6 +395,11 @@ void FridaController::cleanup_frida_objects() {
         frida_unref(script_);
         script_ = nullptr;
     }
+
+    if (script_cancellable_) {
+        g_object_unref(script_cancellable_);
+        script_cancellable_ = nullptr;
+    }
     
     if (session_) {
         frida_session_detach_sync(session_, nullptr, nullptr);
@@ -351,6 +464,13 @@ int FridaController::spawn_suspended(const char* path, char* const argv[], uint3
         llvm_profile_str = std::string("LLVM_PROFILE_FILE=") + llvm_profile;
     }
 
+    // Propagate ADA_SKIP_DSO_HOOKS for testing
+    const char* skip_dso = g_getenv("ADA_SKIP_DSO_HOOKS");
+    std::string skip_dso_str;
+    if (skip_dso) {
+        skip_dso_str = std::string("ADA_SKIP_DSO_HOOKS=") + skip_dso;
+    }
+
     // Build envp array dynamically
     std::vector<const char*> envp_vec;
     envp_vec.push_back(g_strdup_printf("PATH=%s", g_getenv("PATH")));
@@ -363,6 +483,11 @@ int FridaController::spawn_suspended(const char* path, char* const argv[], uint3
     // Add LLVM_PROFILE_FILE if present
     if (!llvm_profile_str.empty()) {
         envp_vec.push_back(llvm_profile_str.c_str());
+    }
+
+    // Add ADA_SKIP_DSO_HOOKS if present
+    if (!skip_dso_str.empty()) {
+        envp_vec.push_back(skip_dso_str.c_str());
     }
 
     // Also propagate other coverage-related variables
@@ -466,7 +591,18 @@ int FridaController::resume() {
         control_block_->process_state = PROCESS_STATE_FAILED;
         return -1;
     }
-    
+
+    // If we have a script (hooks were installed), verify they're ready
+    if (spawn_method_ == SpawnMethod::Frida && control_block_ && script_) {
+        if (cb_get_hooks_ready(control_block_) == 0) {
+            g_printerr("[Controller] Error: hooks_ready not set before resume\n");
+            state_ = PROCESS_STATE_FAILED;
+            control_block_->process_state = PROCESS_STATE_FAILED;
+            return -1;
+        }
+        g_debug("[Controller] Hooks ready confirmed; proceeding to resume\n");
+    }
+
     GError* error = nullptr;
     frida_device_resume_sync(device_, pid_, nullptr, &error);
     
@@ -496,7 +632,14 @@ int FridaController::install_hooks() {
     if (!session_) {
         return -1;
     }
-    
+
+    // Reset readiness and symbol estimate for this startup sequence
+    if (control_block_) {
+        cb_set_hooks_ready(control_block_, 0);
+    }
+    symbol_estimate_.store(0u, std::memory_order_relaxed);
+    has_symbol_estimate_.store(false, std::memory_order_relaxed);
+
     // Find agent library
     char agent_path[1024];
     memset(agent_path, 0, sizeof(agent_path));
@@ -506,7 +649,7 @@ int FridaController::install_hooks() {
 #else
     const char* lib_basename = "libfrida_agent.so";
 #endif
-    
+
     // Check ADA_AGENT_RPATH_SEARCH_PATHS
     const char* rpath = getenv("ADA_AGENT_RPATH_SEARCH_PATHS");
     bool found = false;
@@ -535,14 +678,14 @@ int FridaController::install_hooks() {
             end = search_paths.find(':', start);
         }
     }
-    
+
     if (!found) {
         fprintf(stderr, "[Controller] Agent library not found\n");
         return -1;
     }
-    
+
     printf("[Controller] Using agent library: %s\n", agent_path);
-    
+
     // Prepare initialization payload (optionally include exclude CSV)
     const char* exclude_csv = getenv("ADA_EXCLUDE");
     char init_payload[512];
@@ -561,8 +704,87 @@ int FridaController::install_hooks() {
                  "host_pid=%u;session_id=%08x",
                  shared_memory_get_pid(), shared_memory_get_session_id());
     }
-    
-    // Create QuickJS loader script (MVP path)
+
+    // --------------------------------------------------------------------
+    // Phase 1: Estimate symbol count via lightweight QuickJS script
+    // --------------------------------------------------------------------
+    {
+        char estimate_source[2048];
+        snprintf(estimate_source, sizeof(estimate_source),
+            "console.log('[Loader] Estimating hooks for agent');\n"
+            "const agent_path = '%s';\n"
+            "try {\n"
+            "  const mod = Module.load(agent_path);\n"
+            "  console.log('[Loader] Agent loaded for estimation at base:', mod.base);\n"
+            "  const est = mod.getExportByName('agent_estimate_hooks');\n"
+            "  let count = 0;\n"
+            "  if (est) {\n"
+            "    console.log('[Loader] Using agent_estimate_hooks export');\n"
+            "    const fn = new NativeFunction(est, 'uint32', []);\n"
+            "    count = fn();\n"
+            "    console.log('[Loader] agent_estimate_hooks reported ' + count);\n"
+            "    send('ESTIMATE:' + count + ':agent');\n"
+            "  } else {\n"
+            "    console.log('[Loader] agent_estimate_hooks missing, falling back to JS enumeration');\n"
+            "    const mods = Process.enumerateModules();\n"
+            "    for (let i = 0; i < mods.length; i++) {\n"
+            "      try { count += Module.enumerateExports(mods[i].name).length; } catch (e2) {}\n"
+            "    }\n"
+            "    console.log('[Loader] Fallback JS estimate count ' + count);\n"
+            "    send('ESTIMATE:' + count + ':fallback');\n"
+            "  }\n"
+            "} catch (e) {\n"
+            "  console.error('[Loader] Estimation failed:', e.toString());\n"
+            "  send('ESTIMATE:0:error');\n"
+            "}\n",
+            agent_path);
+
+        GError* error = nullptr;
+        FridaScriptOptions* est_opts = frida_script_options_new();
+        frida_script_options_set_name(est_opts, "agent-estimator");
+        frida_script_options_set_runtime(est_opts, FRIDA_SCRIPT_RUNTIME_QJS);
+
+        FridaScript* estimator = frida_session_create_script_sync(
+            session_, estimate_source, est_opts, nullptr, &error);
+        g_object_unref(est_opts);
+
+        if (error) {
+            g_printerr("Failed to create estimator script: %s\n", error->message);
+            g_error_free(error);
+            return -1;
+        }
+
+        // Reuse the controller's message handler to capture ESTIMATE messages
+        g_signal_connect(estimator, "message",
+                         G_CALLBACK(on_message_callback), this);
+
+        frida_script_load_sync(estimator, nullptr, &error);
+        if (error) {
+            g_printerr("Failed to load estimator script: %s\n", error->message);
+            g_error_free(error);
+            frida_script_unload_sync(estimator, nullptr, nullptr);
+            frida_unref(estimator);
+            return -1;
+        }
+
+        frida_script_unload_sync(estimator, nullptr, nullptr);
+        frida_unref(estimator);
+    }
+
+    uint32_t symbol_count = symbol_estimate_.load(std::memory_order_relaxed);
+    last_startup_timeout_ms_ = startup_cfg_.compute_timeout_ms(symbol_count);
+    printf("[Controller] Startup timeout: symbols=%u, timeout_ms=%u, "
+           "startup_ms=%u, per_symbol_ms=%u, tolerance=%.3f, override_ms=%u\n",
+           symbol_count,
+           last_startup_timeout_ms_,
+           startup_cfg_.startup_ms,
+           startup_cfg_.per_symbol_ms,
+           startup_cfg_.tolerance_pct,
+           startup_cfg_.override_ms);
+
+    // --------------------------------------------------------------------
+    // Phase 2: Create QuickJS loader script and load asynchronously
+    // --------------------------------------------------------------------
     char script_source[4096];
     snprintf(script_source, sizeof(script_source),
         "console.log('[Loader] Starting native agent injection');\n"
@@ -608,34 +830,114 @@ int FridaController::install_hooks() {
         "  throw e;\n"
         "}\n",
         agent_path, init_payload, agent_path, init_payload);
-    
+
     GError* error = nullptr;
     FridaScriptOptions* options = frida_script_options_new();
     frida_script_options_set_name(options, "agent-loader");
     frida_script_options_set_runtime(options, FRIDA_SCRIPT_RUNTIME_QJS);
-    
+
     script_ = frida_session_create_script_sync(session_, script_source,
                                                options, nullptr, &error);
     g_object_unref(options);
-    
+
     if (error) {
         g_printerr("Failed to create script: %s\n", error->message);
         g_error_free(error);
         return -1;
     }
-    
+
     // Connect message handler
     g_signal_connect(script_, "message",
                      G_CALLBACK(on_message_callback), this);
-    
-    // Load script
-    frida_script_load_sync(script_, nullptr, &error);
-    if (error) {
-        g_printerr("Failed to load script: %s\n", error->message);
-        g_error_free(error);
+
+    // Load script asynchronously with deadline enforced by GCancellable + GMainLoop
+    ScriptLoadContext ctx{};
+    ctx.cancellable = g_cancellable_new();
+    ctx.loop = g_main_loop_new(main_context_, FALSE);
+    ctx.error = nullptr;
+    ctx.completed = false;
+    ctx.timed_out = false;
+
+    script_cancellable_ = ctx.cancellable;
+
+    frida_script_load(script_, ctx.cancellable,
+                      on_script_load_finished, &ctx);
+
+    guint timeout_ms = last_startup_timeout_ms_ > 0 ? last_startup_timeout_ms_ : 60000u;
+    g_timeout_add(timeout_ms, on_script_load_timeout_cb, &ctx);
+
+    g_main_loop_run(ctx.loop);
+
+    script_cancellable_ = nullptr;
+
+    if (ctx.cancellable) {
+        g_object_unref(ctx.cancellable);
+    }
+    if (ctx.loop) {
+        g_main_loop_unref(ctx.loop);
+    }
+
+    if (ctx.error) {
+        bool timeout_class = false;
+        if (ctx.error->domain == FRIDA_ERROR &&
+            ctx.error->code == FRIDA_ERROR_TIMED_OUT) {
+            timeout_class = true;
+        } else if (ctx.error->domain == G_IO_ERROR &&
+                   ctx.error->code == G_IO_ERROR_CANCELLED) {
+            timeout_class = true;
+        }
+
+        if (timeout_class) {
+            g_printerr("[Controller] Agent loader timed out after %u ms (estimated symbols=%u)\n",
+                       timeout_ms,
+                       symbol_count);
+        } else {
+            g_printerr("Failed to load script: %s\n", ctx.error->message);
+        }
+
+        g_error_free(ctx.error);
+
+        if (script_) {
+            frida_script_unload_sync(script_, nullptr, nullptr);
+            frida_unref(script_);
+            script_ = nullptr;
+        }
+
+        state_ = PROCESS_STATE_FAILED;
+        if (control_block_) {
+            control_block_->process_state = PROCESS_STATE_FAILED;
+        }
         return -1;
     }
-    
+
+    printf("[Controller] Agent loader script loaded successfully\n");
+
+    // Wait for the agent to signal readiness (hooks_ready flag)
+    // The script loads the agent and calls agent_init, which eventually sets hooks_ready
+    if (control_block_) {
+        const uint32_t poll_ms = 10;
+        // Use the computed startup timeout as readiness deadline
+        uint32_t max_wait_ms = last_startup_timeout_ms_ > 0 ? last_startup_timeout_ms_ : 30000u;
+        uint32_t waited_ms = 0;
+
+        printf("[Controller] Waiting for agent to signal hooks_ready...\n");
+        while (cb_get_hooks_ready(control_block_) == 0) {
+            if (waited_ms >= max_wait_ms) {
+                g_printerr("[Controller] Timeout waiting for agent to set hooks_ready after %u ms\n",
+                           max_wait_ms);
+                state_ = PROCESS_STATE_FAILED;
+                if (control_block_) {
+                    control_block_->process_state = PROCESS_STATE_FAILED;
+                }
+                return -1;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(poll_ms));
+            waited_ms += poll_ms;
+        }
+
+        printf("[Controller] Agent reported hooks_ready after %u ms\n", waited_ms);
+    }
+
     return 0;
 }
 
@@ -650,6 +952,15 @@ int FridaController::inject_agent(const char* agent_path) {
     if (!dir.empty()) {
         setenv("ADA_AGENT_RPATH_SEARCH_PATHS", dir.c_str(), 1);
     }
+
+    // If we have a spawned process but no session, attach first
+    if (!session_ && pid_ > 0 && state_ == PROCESS_STATE_SUSPENDED) {
+        int attach_result = attach(pid_);
+        if (attach_result != 0) {
+            return attach_result;
+        }
+    }
+
     return install_hooks();
 }
 
@@ -722,12 +1033,47 @@ void FridaController::on_message_callback(FridaScript* script,
 }
 
 void FridaController::on_detached(FridaSessionDetachReason reason, FridaCrash* crash) {
+    (void)crash;
+    g_debug("Frida session detached (reason=%d)\n", static_cast<int>(reason));
+
+    // If a script load is in progress, cancel it to unblock the startup loop
+    if (script_cancellable_) {
+        g_cancellable_cancel(script_cancellable_);
+    }
+
     state_ = PROCESS_STATE_INITIALIZED;
-    control_block_->process_state = PROCESS_STATE_INITIALIZED;
+    if (control_block_) {
+        control_block_->process_state = PROCESS_STATE_INITIALIZED;
+    }
 }
 
 void FridaController::on_message(const gchar* message, GBytes* data) {
+    (void)data;
+    if (!message) {
+        return;
+    }
+
     g_debug("Script message: %s\n", message);
+
+    // Lightweight parser for estimation messages from loader/estimator scripts.
+    // We expect the JSON payload to contain a substring like:
+    //   "ESTIMATE:<count>:<source>"
+    const char* tag = "ESTIMATE:";
+    const char* p = strstr(message, tag);
+    if (p) {
+        p += strlen(tag);
+        uint64_t value = 0;
+        while (*p >= '0' && *p <= '9') {
+            value = value * 10u + static_cast<uint64_t>(*p - '0');
+            ++p;
+        }
+        if (value <= UINT32_MAX) {
+            uint32_t count = static_cast<uint32_t>(value);
+            symbol_estimate_.store(count, std::memory_order_relaxed);
+            has_symbol_estimate_.store(true, std::memory_order_relaxed);
+            g_debug("[Controller] Parsed symbol estimate from loader: %u\n", count);
+        }
+    }
 }
 
 // ============================================================================

@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <functional>
 
 // System headers
 #include <unistd.h>
@@ -218,17 +219,23 @@ bool AgentContext::initialize(uint32_t host_pid, uint32_t session_id) {
 
 bool AgentContext::open_shared_memory() {
     if (ada::internal::g_agent_verbose) g_debug("[Agent] Opening shared memory segments...\n");
-    
-    shm_control_ = SharedMemoryRef::open_unique(0, host_pid_, 
+
+    g_debug("[Agent] Attempting to open shared memory with host_pid=%u, session_id=0x%08x\n",
+            host_pid_, session_id_);
+
+    shm_control_ = SharedMemoryRef::open_unique(0, host_pid_,
                                                session_id_, 4096);
-    shm_index_ = SharedMemoryRef::open_unique(1, host_pid_, 
+    shm_index_ = SharedMemoryRef::open_unique(1, host_pid_,
                                              session_id_, 32 * 1024 * 1024);
-    shm_detail_ = SharedMemoryRef::open_unique(2, host_pid_, 
+    shm_detail_ = SharedMemoryRef::open_unique(2, host_pid_,
                                               session_id_, 32 * 1024 * 1024);
-    
-    if (!shm_control_.is_valid() || !shm_index_.is_valid() || 
+
+    if (!shm_control_.is_valid() || !shm_index_.is_valid() ||
         !shm_detail_.is_valid()) {
-        g_debug("[Agent] Failed to open shared memory\n");
+        g_debug("[Agent] Failed to open shared memory (control=%d, index=%d, detail=%d)\n",
+                shm_control_.is_valid() ? 1 : 0,
+                shm_index_.is_valid() ? 1 : 0,
+                shm_detail_.is_valid() ? 1 : 0);
         return false;
     }
     
@@ -399,6 +406,22 @@ static GumAddress resolve_export_address(GumModule* mod, const std::string& sym)
 
 void AgentContext::install_hooks() {
     g_debug("[Agent] install_hooks() entered\n");
+
+    // CRITICAL: Always signal hooks_ready at the end, even if no hooks installed
+    // This prevents controller timeout when ADA_SKIP_DSO_HOOKS=1 or no hookable functions
+    auto set_hooks_ready_guard = [this]() {
+        if (control_block_) {
+            __atomic_store_n(&control_block_->hooks_ready, 1, __ATOMIC_RELEASE);
+            g_debug("[Agent] Set hooks_ready flag in control block\n");
+        }
+    };
+
+    // Use RAII to ensure hooks_ready is always set
+    struct HooksReadyGuard {
+        std::function<void()> cleanup;
+        ~HooksReadyGuard() { if (cleanup) cleanup(); }
+    } guard{set_hooks_ready_guard};
+
     gum_interceptor_begin_transaction(interceptor_);
     g_debug("[Agent] Beginning comprehensive hook installation...\n");
 
@@ -478,7 +501,15 @@ void AgentContext::install_hooks() {
     }
 
     // Enumerate all modules and hook DSOs (excluding main module)
-    GumModuleMap* map = gum_module_map_new();
+    // Check if we should skip DSO hooking for testing
+    bool skip_dso_hooks = false;
+    const char* skip_env = getenv("ADA_SKIP_DSO_HOOKS");
+    if (skip_env && skip_env[0] == '1') {
+        skip_dso_hooks = true;
+        g_debug("[Agent] Skipping DSO hooks as requested by ADA_SKIP_DSO_HOOKS=1\n");
+    }
+
+    GumModuleMap* map = skip_dso_hooks ? nullptr : gum_module_map_new();
     if (map) {
         GPtrArray* mods = gum_module_map_get_values(map);
         for (guint i = 0; mods && i < mods->len; i++) {
@@ -537,12 +568,7 @@ void AgentContext::install_hooks() {
     g_debug("[Agent] Initialization complete: %u/%u hooks installed\n",
             num_hooks_successful_, num_hooks_attempted_);
 
-    // CRITICAL: Signal that hooks are ready via control block
-    if (control_block_) {
-        __atomic_store_n(&control_block_->hooks_ready, 1, __ATOMIC_RELEASE);
-        g_debug("[Agent] Set hooks_ready flag in control block\n");
-    }
-
+    // hooks_ready flag is set by the RAII guard at function exit
 }
 
 void AgentContext::send_hook_summary() {
@@ -707,6 +733,10 @@ size_t safe_stack_capture(void* dest, void* stack_ptr, size_t max_size) {
 void parse_init_payload(const char* data, int data_size,
                        uint32_t* out_host_pid, uint32_t* out_session_id) {
     if (!data || data_size <= 0) return;
+
+    // Initialize outputs
+    *out_host_pid = 0;
+    *out_session_id = 0;
     
     // Copy to a null-terminated buffer
     char buf[256];
@@ -737,21 +767,15 @@ void parse_init_payload(const char* data, int data_size,
         if (strcmp(key, "host_pid") == 0 || strcmp(key, "pid") == 0) {
             *out_host_pid = static_cast<uint32_t>(strtoul(val, nullptr, 0));
         } else if (strcmp(key, "session_id") == 0 || strcmp(key, "sid") == 0) {
-            // Support raw hex without 0x prefix
+            // Session ID is ALWAYS passed as hex (from snprintf with %08x)
+            // Parse as hex regardless of prefix
             unsigned int parsed = UINT32_MAX;
             if (strncmp(val, "0x", 2) == 0 || strncmp(val, "0X", 2) == 0) {
-                parsed = static_cast<unsigned int>(strtoul(val, nullptr, 16));
+                // Has 0x prefix, skip it
+                parsed = static_cast<unsigned int>(strtoul(val + 2, nullptr, 16));
             } else {
-                // Detect hex if contains [a-fA-F]
-                bool looks_hex = false;
-                for (const char* p = val; *p; p++) {
-                    if ((*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F')) {
-                        looks_hex = true;
-                        break;
-                    }
-                }
-                parsed = static_cast<unsigned int>(
-                    strtoul(val, nullptr, looks_hex ? 16 : 10));
+                // No prefix, parse as hex (controller sends it with %08x)
+                parsed = static_cast<unsigned int>(strtoul(val, nullptr, 16));
             }
             *out_session_id = static_cast<uint32_t>(parsed);
         } else if (strcmp(key, "exclude") == 0) {
@@ -762,6 +786,10 @@ void parse_init_payload(const char* data, int data_size,
             g_exclude_csv[n] = '\0';
         }
     }
+
+    // Debug output for parsing results
+    g_debug("[Agent] Parsed init payload: host_pid=%u, session_id=0x%08x\n",
+            *out_host_pid, *out_session_id);
 }
 
 // ============================================================================
@@ -1105,6 +1133,81 @@ void on_leave_callback(GumInvocationContext* ic, gpointer user_data) {
 // ============================================================================
 
 extern "C" {
+
+// Estimate planned hook count without installing hooks.
+// This is used by the loader to compute a startup timeout budget.
+__attribute__((visibility("default")))
+uint32_t agent_estimate_hooks(void) {
+    // Ensure GUM is initialized before using its APIs
+    gum_init_embedded();
+
+    // Build exclude list (defaults + overrides)
+    AdaExcludeList* xs = ada_exclude_create(256);
+    if (xs) {
+        ada_exclude_add_defaults(xs);
+        if (ada::internal::g_exclude_csv[0] != '\0') {
+            ada_exclude_add_from_csv(xs, ada::internal::g_exclude_csv);
+        }
+        const char* env_ex = getenv("ADA_EXCLUDE");
+        if (env_ex && *env_ex) {
+            ada_exclude_add_from_csv(xs, env_ex);
+        }
+    }
+
+    ada::agent::HookRegistry registry;
+    uint32_t count = 0;
+
+    // Enumerate main module exports and plan hooks
+    GumModule* main_mod = gum_process_get_main_module();
+    std::vector<ada::internal::ExportEntry> main_exports_entries;
+    if (main_mod) {
+        gum_module_enumerate_exports(main_mod, ada::internal::collect_exports_cb, &main_exports_entries);
+    }
+    std::vector<std::string> main_export_names;
+    main_export_names.reserve(main_exports_entries.size());
+    for (auto& e : main_exports_entries) {
+        main_export_names.push_back(e.name);
+    }
+    auto main_plan = ada::agent::plan_module_hooks("<main>", main_export_names, xs, registry);
+    count += static_cast<uint32_t>(main_plan.size());
+
+    // Check if we should skip DSO hooking for testing
+    bool skip_dso_hooks = false;
+    const char* skip_env = getenv("ADA_SKIP_DSO_HOOKS");
+    if (skip_env && skip_env[0] == '1') {
+        skip_dso_hooks = true;
+    }
+
+    // Enumerate DSOs and plan hooks with the same matching rules
+    GumModuleMap* map = skip_dso_hooks ? nullptr : gum_module_map_new();
+    if (map) {
+        GPtrArray* mods = gum_module_map_get_values(map);
+        for (guint i = 0; mods && i < mods->len; i++) {
+            GumModule* mod = static_cast<GumModule*>(g_ptr_array_index(mods, i));
+            if (mod == main_mod) continue;
+            const char* path = gum_module_get_path(mod);
+            if (!path || path[0] == '\0') continue;
+            std::vector<ada::internal::ExportEntry> exps;
+            gum_module_enumerate_exports(mod, ada::internal::collect_exports_cb, &exps);
+            if (exps.empty()) continue;
+            std::vector<std::string> names;
+            names.reserve(exps.size());
+            for (auto& e : exps) {
+                names.push_back(e.name);
+            }
+            auto plan = ada::agent::plan_module_hooks(path, names, xs, registry);
+            count += static_cast<uint32_t>(plan.size());
+        }
+        g_object_unref(map);
+    }
+
+    if (xs) {
+        ada_exclude_destroy(xs);
+    }
+
+    g_debug("[Agent] agent_estimate_hooks returning %u planned hooks\n", count);
+    return count;
+}
 
 // Agent initialization - the main entry point called by Frida
 __attribute__((visibility("default")))

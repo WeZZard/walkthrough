@@ -139,6 +139,39 @@ if(FRIDA_CORE_TEST)
         test_controller_coverage
         RUNTIME DESTINATION bin
     )
+
+    # Startup timeout configuration tests (M1_E6_I1)
+    add_executable(test_startup_timeout
+        test_startup_timeout.cpp
+    )
+    target_include_directories(test_startup_timeout
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/../third_parties/frida-core
+            ${CMAKE_SOURCE_DIR}/src          # For frida_controller_internal.h
+            ${CMAKE_BINARY_DIR}              # For ada_paths.h
+    )
+    target_link_libraries(test_startup_timeout
+        PRIVATE
+            test_main
+            GTest::gtest
+            GTest::gmock
+            tracer_controller
+            tracer_utils
+            Threads::Threads
+    )
+
+    gtest_discover_tests(test_startup_timeout
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DISCOVERY_MODE PRE_TEST
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "unit"
+    )
+
+    install(TARGETS
+        test_startup_timeout
+        RUNTIME DESTINATION bin
+    )
 endif()
 
 # Usage formatting test (does not require Frida)

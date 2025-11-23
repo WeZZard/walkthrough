@@ -70,6 +70,7 @@ int main(int argc, char* argv[]) {
     const char* exclude_csv = NULL;
     double duration_seconds = 0.0;
     bool duration_specified = false;
+    const char* startup_timeout_arg = NULL;
     
     // Parse options
     for (int i = 3; i < argc; i++) {
@@ -88,6 +89,17 @@ int main(int argc, char* argv[]) {
             }
             duration_seconds = parsed;
             duration_specified = true;
+        } else if (strcmp(argv[i], "--startup-timeout") == 0 && i + 1 < argc) {
+            startup_timeout_arg = argv[++i];
+            char* endptr = NULL;
+            unsigned long parsed = strtoul(startup_timeout_arg, &endptr, 10);
+            if (endptr == startup_timeout_arg || *endptr != '\0' || parsed == 0ul) {
+                fprintf(stderr, "Invalid startup timeout '%s'. Expected positive integer milliseconds.\n",
+                        startup_timeout_arg);
+                exit_code = 1;
+                goto cleanup;
+            }
+            setenv("ADA_STARTUP_TIMEOUT", startup_timeout_arg, 1);
         }
     }
 
@@ -160,6 +172,10 @@ int main(int argc, char* argv[]) {
             }
             if (strcmp(argv[i], "--duration") == 0) {
                 i++; // Skip duration value
+                continue;
+            }
+            if (strcmp(argv[i], "--startup-timeout") == 0) {
+                i++; // Skip startup-timeout value
                 continue;
             }
             spawn_argv[i - 2] = argv[i];

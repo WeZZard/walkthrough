@@ -24,7 +24,8 @@ size_t tracer_controller_format_usage(char* buffer, size_t buffer_size, const ch
         "\nOptions:\n"
         "  --output <dir>    - Output directory for traces (default: ./traces)\n"
         "  --exclude <csv>   - Comma/semicolon-separated list of symbols to exclude from hooks\n"
-        "  --duration <sec>  - Automatically stop tracing after the given duration in seconds\n",
+        "  --duration <sec>  - Automatically stop tracing after the given duration in seconds\n"
+        "  --startup-timeout <ms> - Override agent startup timeout in milliseconds (expert use)\n",
         program,
         program,
         program,

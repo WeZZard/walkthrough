@@ -10,6 +10,7 @@ fn run_gtest(bin: &str, filter: &str) -> io::Result<()> {
     let mut cmd = Command::new(bin);
     cmd.arg("--gtest_brief=1")
         .arg(format!("--gtest_filter={}", filter))
+        .env("ADA_SKIP_DSO_HOOKS", "1")  // Skip DSO hooks for test performance
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

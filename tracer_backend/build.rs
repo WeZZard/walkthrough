@@ -711,6 +711,19 @@ fn main() {
             "out/bin/test_backpressure_state",
             "test/test_backpressure_state",
         ),
+        // Controller startup-timeout unit tests (M1_E6_I1)
+        (
+            "build/test_startup_timeout",
+            "test/test_startup_timeout",
+        ),
+        (
+            "build/tests/unit/controller/test_startup_timeout",
+            "test/test_startup_timeout",
+        ),
+        (
+            "out/bin/test_startup_timeout",
+            "test/test_startup_timeout",
+        ),
     ];
 
     for (src_path, dst_path) in binaries {

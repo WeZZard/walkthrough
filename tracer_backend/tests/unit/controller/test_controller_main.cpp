@@ -152,6 +152,28 @@ TEST(main__duration_negative__then_reports_error, behavior) {
   EXPECT_THAT(err, HasSubstr("Invalid duration '-5'"));
 }
 
+TEST(main__startup_timeout_cli_override__then_sets_environment, behavior) {
+  controller_main_test_reset_state();
+  unsetenv("ADA_STARTUP_TIMEOUT");
+
+  // Ensure the monitor loop exits promptly
+  controller_main_test_set_sleep_break_after(1);
+
+  std::vector<std::string> args = {"prog", "spawn", "target",
+                                   "--startup-timeout", "90000"};
+
+  testing::internal::CaptureStdout();
+  int exit_code = invoke_main_with_vector(args);
+  testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(exit_code, 0);
+  const char* env = getenv("ADA_STARTUP_TIMEOUT");
+  ASSERT_NE(env, nullptr);
+  EXPECT_THAT(std::string(env), StrEq("90000"));
+
+  unsetenv("ADA_STARTUP_TIMEOUT");
+}
+
 TEST(main__duration_submillisecond__then_rounds_up_timer, behavior) {
   controller_main_test_reset_state();
   bool timer_sequence[] = {false};
