@@ -1,6 +1,6 @@
 #!/bin/bash
-# Unified Integration Quality Gate with Agent-Friendly Output
-# Single script that combines human and agent reporting
+# Unified Integration Quality Gate
+# Human-readable quality reporting
 # Zero dependencies except standard Unix tools
 
 set -uo pipefail
@@ -11,12 +11,9 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="${1:-full}"  # full, incremental, score-only
-AGENT_MODE="${AGENT_MODE:-true}"  # Enable agent reporting by default
 VERBOSE="${VERBOSE:-false}"
 
 # Paths
-AGENT_REPORT_DIR="${REPO_ROOT}/target/agent_reports"
-AGENT_REPORT_FILE="${AGENT_REPORT_DIR}/current_report.json"
 COVERAGE_DIR="${REPO_ROOT}/target/coverage"
 COVERAGE_REPORT_DIR="${REPO_ROOT}/target/coverage_report"
 
@@ -148,80 +145,7 @@ deduct_points() {
     log_error "$reason"
 }
 
-# ============================================================================
-# AGENT REPORTING FUNCTIONS
-# ============================================================================
 
-init_agent_report() {
-    if [[ "$AGENT_MODE" != "true" ]]; then
-        return
-    fi
-    
-    mkdir -p "$AGENT_REPORT_DIR"
-    
-    cat > "$AGENT_REPORT_FILE" << EOF
-{
-    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-    "mode": "$MODE",
-    "status": "running",
-    "failures": [],
-    "suggestions": [],
-    "next_actions": [],
-    "metrics": {
-        "integration_score": 100
-    }
-}
-EOF
-}
-
-add_agent_failure() {
-    if [[ "$AGENT_MODE" != "true" ]] || [[ ! -f "$AGENT_REPORT_FILE" ]]; then
-        return
-    fi
-    
-    local failure_type="$1"
-    local failure_json="$2"
-    
-    # Add failure to report
-    local tmp_file=$(mktemp)
-    jq --argjson failure "$failure_json" \
-       '.failures += [$failure]' \
-       "$AGENT_REPORT_FILE" > "$tmp_file"
-    mv "$tmp_file" "$AGENT_REPORT_FILE"
-}
-
-add_agent_action() {
-    if [[ "$AGENT_MODE" != "true" ]] || [[ ! -f "$AGENT_REPORT_FILE" ]]; then
-        return
-    fi
-    
-    local action_json="$1"
-    
-    # Add action to report
-    local tmp_file=$(mktemp)
-    jq --argjson action "$action_json" \
-       '.next_actions += [$action]' \
-       "$AGENT_REPORT_FILE" > "$tmp_file"
-    mv "$tmp_file" "$AGENT_REPORT_FILE"
-}
-
-finalize_agent_report() {
-    if [[ "$AGENT_MODE" != "true" ]] || [[ ! -f "$AGENT_REPORT_FILE" ]]; then
-        return
-    fi
-    
-    local status="passed"
-    if [[ $INTEGRATION_SCORE -lt 100 ]]; then
-        status="failed"
-    fi
-    
-    local tmp_file=$(mktemp)
-    jq --arg status "$status" \
-       --argjson score "$INTEGRATION_SCORE" \
-       '.status = $status | .metrics.integration_score = $score' \
-       "$AGENT_REPORT_FILE" > "$tmp_file"
-    mv "$tmp_file" "$AGENT_REPORT_FILE"
-}
 
 # ============================================================================
 # PLATFORM DETECTION
@@ -323,11 +247,6 @@ build_all() {
     if ! cargo build --all --release $BUILD_FLAGS 2>&1 | tee "$BUILD_OUTPUT"; then
         deduct_points 100 "Build failed"
         
-        # Parse build errors for agent
-        if [[ "$AGENT_MODE" == "true" ]]; then
-            parse_build_errors_for_agent
-        fi
-        
         end_timer "Cargo Build"
         end_timer "Build Phase"
         return 1
@@ -342,62 +261,6 @@ build_all() {
     fi
 
     end_timer "Build Phase"
-}
-
-parse_build_errors_for_agent() {
-    local build_output="$(cat "$BUILD_OUTPUT")"
-    
-    # Parse compilation errors
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^([^:]+):([0-9]+):([0-9]+):[[:space:]]*error:[[:space:]]*(.+)$ ]]; then
-            local file="${BASH_REMATCH[1]}"
-            local line_num="${BASH_REMATCH[2]}"
-            local col="${BASH_REMATCH[3]}"
-            local message="${BASH_REMATCH[4]}"
-            
-            # Determine agent based on file extension
-            local agent="cpp-developer"
-            [[ "$file" == *.rs ]] && agent="rust-developer"
-            [[ "$file" == *.py ]] && agent="python-developer"
-            
-            # Add failure record
-            add_agent_failure "compilation" "{
-                \"type\": \"compilation\",
-                \"file\": \"$file\",
-                \"line\": $line_num,
-                \"column\": $col,
-                \"message\": \"$message\"
-            }"
-            
-            # Add suggested action
-            add_agent_action "{
-                \"agent\": \"$agent\",
-                \"priority\": 1,
-                \"action\": \"fix_compilation\",
-                \"target\": {
-                    \"file\": \"$file\",
-                    \"line\": $line_num,
-                    \"error\": \"$message\"
-                },
-                \"command\": \"Fix compilation error at $file:$line_num - $message\"
-            }"
-        fi
-    done <<< "$build_output"
-    
-    # Parse linker errors
-    if echo "$build_output" | grep -q "undefined reference\|symbol not found"; then
-        add_agent_failure "linking" "{
-            \"type\": \"linking\",
-            \"message\": \"Undefined symbols or references found\"
-        }"
-        
-        add_agent_action "{
-            \"agent\": \"cpp-developer\",
-            \"priority\": 1,
-            \"action\": \"fix_linking\",
-            \"command\": \"Fix linking errors - check for missing implementations or incorrect FFI exports\"
-        }"
-    fi
 }
 
 sign_test_binaries() {
@@ -558,11 +421,6 @@ run_tests() {
     if ! cargo test --all $TEST_FLAGS 2>&1 | tee "$TEST_OUTPUT"; then
         deduct_points 100 "Tests failed"
 
-        # Parse test failures for agent
-        if [[ "$AGENT_MODE" == "true" ]]; then
-            parse_test_failures_for_agent
-        fi
-
         end_timer "Cargo Test"
         end_timer "Test Phase"
         return 1
@@ -573,58 +431,7 @@ run_tests() {
     end_timer "Test Phase"
 }
 
-parse_test_failures_for_agent() {
-    local test_output="$(cat "$TEST_OUTPUT")"
-    
-    # Parse GoogleTest failures
-    while IFS= read -r line; do
-        if [[ "$line" =~ \[\ \ FAILED\ \ \]\ (.+) ]]; then
-            local test_name="${BASH_REMATCH[1]}"
-            
-            # Find test file location if possible
-            local test_location=$(echo "$test_output" | grep -B10 "$test_name" | grep -oE "[^/]+\.(cpp|cc|c):[0-9]+" | head -1)
-            
-            add_agent_failure "test" "{
-                \"type\": \"test\",
-                \"test_name\": \"$test_name\",
-                \"location\": \"$test_location\"
-            }"
-            
-            add_agent_action "{
-                \"agent\": \"cpp-developer\",
-                \"priority\": 1,
-                \"action\": \"fix_test\",
-                \"target\": {
-                    \"test\": \"$test_name\"
-                },
-                \"command\": \"Fix failing test $test_name - analyze whether test or implementation needs fixing\"
-            }"
-        fi
-    done <<< "$test_output"
-    
-    # Parse Rust test failures
-    while IFS= read -r line; do
-        if [[ "$line" =~ test\ (.+)\ \.\.\.\ FAILED ]]; then
-            local test_name="${BASH_REMATCH[1]}"
-            
-            add_agent_failure "test" "{
-                \"type\": \"test\",
-                \"test_name\": \"$test_name\",
-                \"language\": \"rust\"
-            }"
-            
-            add_agent_action "{
-                \"agent\": \"rust-developer\",
-                \"priority\": 1,
-                \"action\": \"fix_test\",
-                \"target\": {
-                    \"test\": \"$test_name\"
-                },
-                \"command\": \"Fix failing Rust test $test_name\"
-            }"
-        fi
-    done <<< "$test_output"
-}
+
 
 # ============================================================================
 # COVERAGE PHASE
@@ -839,12 +646,6 @@ check_incremental_coverage() {
         log_error "Production files lack coverage:"
         echo -e "$coverage_issues"
         deduct_points 100 "Production code must have 100% test coverage"
-
-        # Parse coverage failures for agent
-        if [[ "$AGENT_MODE" == "true" ]]; then
-            parse_coverage_failures_for_agent
-        fi
-
         return 1
     elif [[ $diff_cover_result -ne 0 ]]; then
         log_warning "Test files lack coverage (ignored for quality gate)"
@@ -853,52 +654,13 @@ check_incremental_coverage() {
     log_success "All changed lines have 100% coverage"
 }
 
-parse_coverage_failures_for_agent() {
-    local coverage_output="$(cat "$COVERAGE_OUTPUT")"
-    
-    # Extract files with insufficient coverage
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^([^[:space:]]+)[[:space:]]+\(([0-9]+)%\) ]]; then
-            local file="${BASH_REMATCH[1]}"
-            local coverage="${BASH_REMATCH[2]}"
-            
-            # Try to extract specific uncovered lines
-            local uncovered_lines=$(echo "$coverage_output" | grep -A20 "$file" | grep "^!" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
-            
-            add_agent_failure "coverage" "{
-                \"type\": \"coverage\",
-                \"file\": \"$file\",
-                \"coverage_percentage\": $coverage,
-                \"uncovered_lines\": \"$uncovered_lines\"
-            }"
-            
-            # Determine test engineer based on file type
-            local agent="cpp-test-engineer"
-            [[ "$file" == *.rs ]] && agent="rust-test-engineer"
-            [[ "$file" == *.py ]] && agent="python-test-engineer"
-            
-            add_agent_action "{
-                \"agent\": \"$agent\",
-                \"priority\": 1,
-                \"action\": \"write_tests\",
-                \"target\": {
-                    \"file\": \"$file\",
-                    \"lines\": \"$uncovered_lines\"
-                },
-                \"command\": \"Write tests to cover uncovered lines in $file. Focus on lines: $uncovered_lines\"
-            }"
-        fi
-    done <<< "$coverage_output"
-}
+
 
 # ============================================================================
 # REPORTING
 # ============================================================================
 
 generate_final_report() {
-    # Finalize agent report
-    finalize_agent_report
-    
     # Human-readable report
     echo ""
     echo "========================================="
@@ -921,25 +683,6 @@ generate_final_report() {
     
     echo -e "Integration Score: ${score_color}${INTEGRATION_SCORE}/100${NC}"
     
-    # Show agent report location if failures exist
-    if [[ "$AGENT_MODE" == "true" ]] && [[ $INTEGRATION_SCORE -lt 100 ]] && [[ -f "$AGENT_REPORT_FILE" ]]; then
-        echo ""
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${BLUE}  AGENT ANALYSIS AVAILABLE${NC}"
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        
-        # Show recommended actions
-        local action_count=$(jq '.next_actions | length' "$AGENT_REPORT_FILE")
-        if [[ $action_count -gt 0 ]]; then
-            echo "Recommended agent actions:"
-            jq -r '.next_actions[] | "  • \(.agent): \(.command)"' "$AGENT_REPORT_FILE" | head -5
-        fi
-        
-        echo ""
-        echo "Full agent report: $AGENT_REPORT_FILE"
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    fi
-    
     if [[ $INTEGRATION_SCORE -eq 100 ]]; then
         echo -e "${GREEN}✓ Quality Gate PASSED${NC}"
         return $CHECK_RESULT_PASSED
@@ -954,10 +697,7 @@ generate_final_report() {
 # ============================================================================
 
 main() {
-    # Initialize agent reporting
-    init_agent_report
-    
-    log_info "Running quality gate in $MODE mode (Agent: $AGENT_MODE)"
+    log_info "Running quality gate in $MODE mode"
     
     # Check for documentation-only changes
     if [[ "$MODE" == "incremental" ]] && is_documentation_only; then

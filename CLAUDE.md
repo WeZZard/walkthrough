@@ -226,56 +226,6 @@ When failures occur, agents automatically perform:
 2. **Implementation Check** → Validate against interface contracts
 3. **Test Check** → Ensure tests use interfaces correctly
 
-### Automatic Agent Invocation
-
-Claude Code will automatically invoke the appropriate global agents based on context:
-- **Interface issues** → `@interface-enforcer` (highest priority)
-- **Build/test failures** → `@{language}-integrator` → root cause analysis
-- **Planning tasks** → `@iteration-planner` 
-- **Architecture decisions** → `@architect` (must provide compilable interfaces)
-- **Design reviews** → `@design-reviewer`
-- **Language-specific work** → `@{language}-developer`
-- **Git/PR operations** → `@integration-engineer`
-- **Cross-language issues** → See `.claude/ada-integrator.yaml`
-
-See `.claude/auto-agents.yaml` for trigger configuration.
-
-### Available Agents
-
-For specific development tasks, use the appropriate specialized agent in `.claude/agents/`:
-
-**Planning & Architecture:**
-
-- `iteration-planner` - Iteration planning with TDD workflow
-- `architect` - System design and technical decisions
-- `design-reviewer` - Reviews designs for maintainability and proposes alternatives
-
-**Language-Specific Development:**
-
-- `cpp-developer` - C/C++ implementation
-- `rust-developer` - Rust implementation
-- `python-developer` - Python implementation
-
-**Testing:**
-
-- `cpp-test-engineer` - C/C++ unit/integration tests
-- `rust-test-engineer` - Rust tests
-- `python-test-engineer` - Python tests
-- `ffi-test-engineer` - Cross-language boundary testing
-- `system-test-engineer` - End-to-end testing
-
-**Debugging:**
-
-- `cpp-debugger` - C/C++ debugging
-- `rust-debugger` - Rust debugging
-- `python-debugger` - Python debugging
-
-**Performance & Integration:**
-
-- `performance-benchmark-engineer` - Performance testing
-- `integration-test-engineer` - Integration testing
-- `unit-test-engineer` - Unit testing
-
 ## MANDATORY: Quality Requirements
 
 **100% Mandatory - No Exceptions:**
