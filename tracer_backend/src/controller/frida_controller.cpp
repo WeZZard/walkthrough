@@ -776,30 +776,44 @@ int FridaController::install_hooks() {
     {
         char estimate_source[2048];
         snprintf(estimate_source, sizeof(estimate_source),
+#if DEBUG
             "console.log('[Loader] Estimating hooks for agent');\n"
+#endif
             "const agent_path = '%s';\n"
             "try {\n"
             "  const mod = Module.load(agent_path);\n"
+#if DEBUG
             "  console.log('[Loader] Agent loaded for estimation at base:', mod.base);\n"
+#endif
             "  const est = mod.getExportByName('agent_estimate_hooks');\n"
             "  let count = 0;\n"
             "  if (est) {\n"
+#if DEBUG
             "    console.log('[Loader] Using agent_estimate_hooks export');\n"
+#endif
             "    const fn = new NativeFunction(est, 'uint32', []);\n"
             "    count = fn();\n"
+#if DEBUG
             "    console.log('[Loader] agent_estimate_hooks reported ' + count);\n"
+#endif
             "    send('ESTIMATE:' + count + ':agent');\n"
             "  } else {\n"
+#if DEBUG
             "    console.log('[Loader] agent_estimate_hooks missing, falling back to JS enumeration');\n"
+#endif
             "    const mods = Process.enumerateModules();\n"
             "    for (let i = 0; i < mods.length; i++) {\n"
             "      try { count += Module.enumerateExports(mods[i].name).length; } catch (e2) {}\n"
             "    }\n"
+#if DEBUG
             "    console.log('[Loader] Fallback JS estimate count ' + count);\n"
+#endif
             "    send('ESTIMATE:' + count + ':fallback');\n"
             "  }\n"
             "} catch (e) {\n"
+#if DEBUG
             "  console.error('[Loader] Estimation failed:', e.toString());\n"
+#endif
             "  send('ESTIMATE:0:error');\n"
             "}\n",
             agent_path);
@@ -852,9 +866,11 @@ int FridaController::install_hooks() {
     // --------------------------------------------------------------------
     char script_source[4096];
     snprintf(script_source, sizeof(script_source),
+#if DEBUG
         "console.log('[Loader] Starting native agent injection');\n"
         "console.log('[Loader] Agent path: %s');\n"
         "console.log('[Loader] Init payload: %s');\n"
+#endif
         "\n"
         "try {\n"
         "  const agent_path = '%s';\n"
@@ -862,12 +878,16 @@ int FridaController::install_hooks() {
         "  \n"
         "  // Load the native agent module\n"
         "  const mod = Module.load(agent_path);\n"
+#if DEBUG
         "  console.log('[Loader] Agent loaded at base:', mod.base);\n"
+#endif
         "  \n"
         "  // Get the agent_init function\n"
         "  const agent_init = mod.getExportByName('agent_init');\n"
         "  if (agent_init) {\n"
+#if DEBUG
         "    console.log('[Loader] Found agent_init at:', agent_init);\n"
+#endif
         "    \n"
         "    // Create native function wrapper\n"
         "    const initFunc = new NativeFunction(agent_init, 'void', ['pointer', 'int']);\n"
@@ -878,12 +898,18 @@ int FridaController::install_hooks() {
         "    // Call agent_init\n"
         "    try {\n"
         "      initFunc(payloadBuf, init_payload.length);\n"
+#if DEBUG
         "      console.log('[Loader] Agent initialized successfully');\n"
+#endif
         "    } catch (e2) {\n"
+#if DEBUG
         "      console.error('[Loader] Error calling agent_init:', e2.toString());\n"
+#endif
         "    }\n"
         "  } else {\n"
+#if DEBUG
         "    console.error('[Loader] agent_init not found in agent');\n"
+#endif
         "  }\n"
         "  \n"
         "  // Export a ping function for health checks\n"
@@ -891,7 +917,9 @@ int FridaController::install_hooks() {
         "    ping: function() { return 'ok'; }\n"
         "  };\n"
         "} catch (e) {\n"
+#if DEBUG
         "  console.error('[Loader] Error:', e.toString());\n"
+#endif
         "  throw e;\n"
         "}\n",
         agent_path, init_payload, agent_path, init_payload);

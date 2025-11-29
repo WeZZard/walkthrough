@@ -79,8 +79,18 @@ set_target_properties(frida_agent PROPERTIES
 
 # Sign the agent library on macOS
 if(APPLE)
+    # Check for APPLE_DEVELOPER_ID environment variable
+    if(DEFINED ENV{APPLE_DEVELOPER_ID})
+        set(SIGNING_IDENTITY "$ENV{APPLE_DEVELOPER_ID}")
+        message(STATUS "Signing with identity: ${SIGNING_IDENTITY}")
+    else()
+        set(SIGNING_IDENTITY "-")
+        message(WARNING "APPLE_DEVELOPER_ID not set. Using ad-hoc signing. 'debugger' entitlement will be ignored.")
+    endif()
+
     add_custom_command(TARGET frida_agent POST_BUILD
-        COMMAND codesign -s - --entitlements "${CMAKE_SOURCE_DIR}/../utils/ada_entitlements.plist" --force $<TARGET_FILE:frida_agent>
+        COMMAND codesign -s "${SIGNING_IDENTITY}" --entitlements "${CMAKE_SOURCE_DIR}/../utils/ada_entitlements.plist" --force $<TARGET_FILE:frida_agent>
         COMMENT "Signing frida_agent with entitlements"
+        VERBATIM
     )
 endif()

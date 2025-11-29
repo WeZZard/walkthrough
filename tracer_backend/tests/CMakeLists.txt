@@ -44,9 +44,19 @@ set_target_properties(test_cli PROPERTIES
 )
 
 if(APPLE)
+    # Check for APPLE_DEVELOPER_ID environment variable
+    if(DEFINED ENV{APPLE_DEVELOPER_ID})
+        set(SIGNING_IDENTITY "$ENV{APPLE_DEVELOPER_ID}")
+        message(STATUS "Signing with identity: ${SIGNING_IDENTITY}")
+    else()
+        set(SIGNING_IDENTITY "-")
+        message(WARNING "APPLE_DEVELOPER_ID not set. Using ad-hoc signing. 'debugger' entitlement will be ignored.")
+    endif()
+
     add_custom_command(TARGET test_cli POST_BUILD
-        COMMAND codesign -s - --entitlements "${CMAKE_SOURCE_DIR}/../utils/ada_entitlements.plist" --force $<TARGET_FILE:test_cli>
+        COMMAND codesign -s "${SIGNING_IDENTITY}" --entitlements "${CMAKE_SOURCE_DIR}/../utils/ada_entitlements.plist" --force $<TARGET_FILE:test_cli>
         COMMENT "Signing test_cli with entitlements"
+        VERBATIM
     )
 endif()
 
@@ -62,8 +72,9 @@ if(APPLE)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     add_custom_command(TARGET test_runloop POST_BUILD
-        COMMAND codesign -s - --entitlements "${CMAKE_SOURCE_DIR}/../utils/ada_entitlements.plist" --force $<TARGET_FILE:test_runloop>
+        COMMAND codesign -s "${SIGNING_IDENTITY}" --entitlements "${CMAKE_SOURCE_DIR}/../utils/ada_entitlements.plist" --force $<TARGET_FILE:test_runloop>
         COMMENT "Signing test_runloop with entitlements"
+        VERBATIM
     )
 endif()
 

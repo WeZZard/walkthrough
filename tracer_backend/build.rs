@@ -776,6 +776,14 @@ fn main() {
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf());
         let entitlements_path = workspace_root.join("utils/ada_entitlements.plist");
         
+        // Determine signing identity from env var, default to ad-hoc
+        let signing_identity = env::var("APPLE_DEVELOPER_ID").unwrap_or_else(|_| "-".to_string());
+        if signing_identity == "-" {
+            println!("cargo:warning=APPLE_DEVELOPER_ID not set. Using ad-hoc signing. 'debugger' entitlement will be ignored.");
+        } else {
+            println!("cargo:info=Signing with identity: {}", signing_identity);
+        }
+
         if !entitlements_path.exists() {
             println!("cargo:warning=Entitlements file not found at: {}", entitlements_path.display());
         } else {
@@ -784,7 +792,7 @@ fn main() {
             if agent_lib.exists() {
                 let status = Command::new("codesign")
                     .arg("-s")
-                    .arg("-")
+                    .arg(&signing_identity)
                     .arg("--entitlements")
                     .arg(&entitlements_path)
                     .arg("--force")
@@ -810,7 +818,7 @@ fn main() {
                 if test_path.exists() {
                     let status = Command::new("codesign")
                         .arg("-s")
-                        .arg("-")
+                        .arg(&signing_identity)
                         .arg("--entitlements")
                         .arg(&entitlements_path)
                         .arg("--force")

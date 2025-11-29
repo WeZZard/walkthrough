@@ -42,6 +42,8 @@ extern "C" {
 #include <tracer_backend/agent/comprehensive_hooks.h>
 #include <tracer_backend/agent/dso_management.h>
 
+#define ADA_MINIMAL_HOOKS 1
+
 // Forward declare the C callbacks
 extern "C" {
 void on_enter_callback(GumInvocationContext* ic, gpointer user_data);
@@ -91,7 +93,7 @@ enum LogCategory {
 
 // Log level control - bitmask of enabled categories
 // Default: lifecycle and hooks enabled, callbacks and events disabled
-static uint32_t g_log_enabled = LOG_LIFECYCLE | LOG_HOOK_SUMMARY;
+static uint32_t g_log_enabled = LOG_LIFECYCLE | LOG_HOOK_INSTALL | LOG_HOOK_SUMMARY;
 
 [[maybe_unused]]
 static void agent_log_cat(uint32_t category, const char* format, ...) {
@@ -1217,6 +1219,15 @@ static void capture_detail_event(AgentContext* ctx, HookData* hook,
 // C-style callbacks for Frida (must be extern "C")
 extern "C" {
 
+#ifdef ADA_MINIMAL_HOOKS
+// Minimal implementation for testing hook installation without event capture overhead
+void on_enter_callback(GumInvocationContext* ic, gpointer user_data) {
+    // Minimal no-op implementation
+    (void)ic;
+    (void)user_data;
+}
+#else
+// Full implementation with event capture
 void on_enter_callback(GumInvocationContext* ic, gpointer user_data) {
     // Prevent execution during shutdown
     if (g_agent_shutting_down) return;
@@ -1276,7 +1287,17 @@ void on_enter_callback(GumInvocationContext* ic, gpointer user_data) {
 
     tls->exit_handler();
 }
+#endif // ADA_MINIMAL_HOOKS
 
+#ifdef ADA_MINIMAL_HOOKS
+// Minimal implementation for testing hook installation without event capture overhead
+void on_leave_callback(GumInvocationContext* ic, gpointer user_data) {
+    // Minimal no-op implementation
+    (void)ic;
+    (void)user_data;
+}
+#else
+// Full implementation with event capture
 void on_leave_callback(GumInvocationContext* ic, gpointer user_data) {
     // Prevent execution during shutdown
     if (g_agent_shutting_down) return;
@@ -1319,6 +1340,7 @@ void on_leave_callback(GumInvocationContext* ic, gpointer user_data) {
     
     tls->exit_handler();
 }
+#endif // ADA_MINIMAL_HOOKS
 
 } // extern "C"
 
