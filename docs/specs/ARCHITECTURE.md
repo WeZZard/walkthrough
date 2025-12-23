@@ -48,23 +48,24 @@ The system uses a dual-lane recording approach to balance comprehensive coverage
 
 **Purpose**: Continuous, lightweight recording of all function calls
 
-**Event Structure** (24 bytes):
+**Event Structure** (32 bytes):
 ```c
-struct IndexEvent {
-    uint64_t timestamp;     // 8 bytes - nanoseconds since epoch
-    uint32_t function_id;   // 4 bytes - hashed function identifier
-    uint32_t thread_id;     // 4 bytes - thread identifier
-    uint16_t event_type;    // 2 bytes - enter/exit/error
-    uint16_t flags;         // 2 bytes - additional flags
-    uint32_t sequence;      // 4 bytes - sequence number
-};
+typedef struct __attribute__((packed)) {
+    uint64_t timestamp_ns;   // 8 bytes - nanoseconds from continuous clock (genlock)
+    uint64_t function_id;    // 8 bytes - (moduleId << 32) | symbolIndex
+    uint32_t thread_id;      // 4 bytes - OS thread identifier
+    uint32_t event_kind;     // 4 bytes - CALL=1, RETURN=2, EXCEPTION=3
+    uint32_t call_depth;     // 4 bytes - call stack depth
+    uint32_t detail_seq;     // 4 bytes - forward link to detail event (UINT32_MAX = none)
+} IndexEvent;
 ```
 
 **Characteristics**:
-- Fixed-size events for predictable performance
+- Fixed-size 32-byte events for predictable performance
 - Ring buffer with overwrite on overflow
-- Target: <1% overhead at 5M events/sec
+- Target: <1% overhead at 10M events/sec
 - Provides complete execution timeline
+- Bidirectional linking to detail events via `detail_seq`
 
 ### Lane 2: Detail Lane (Always Captured, Selectively Persisted)
 
@@ -72,16 +73,31 @@ struct IndexEvent {
 
 **Event Structure** (512 bytes):
 ```c
-struct DetailEvent {
-    IndexEvent header;          // 24 bytes - same as index event
-    uint64_t registers[16];     // 128 bytes - CPU registers
-    uint8_t stack_snapshot[256]; // 256 bytes - stack around SP
-    uint64_t return_address;    // 8 bytes
-    uint64_t heap_pointers[8];  // 64 bytes - relevant heap refs
-    uint32_t error_code;        // 4 bytes
-    uint8_t padding[28];        // 28 bytes - alignment/future use
-};
+typedef struct __attribute__((packed)) {
+    // Header (32 bytes)
+    uint64_t timestamp;      // 8 bytes - monotonic nanoseconds
+    uint64_t function_id;    // 8 bytes - (moduleId << 32) | symbolIndex
+    uint32_t thread_id;      // 4 bytes
+    uint32_t event_kind;     // 4 bytes
+    uint32_t call_depth;     // 4 bytes
+    uint32_t _pad1;          // 4 bytes
+
+    // ARM64 ABI registers (88 bytes)
+    uint64_t x_regs[8];      // 64 bytes - x0-x7 for arguments
+    uint64_t lr;             // 8 bytes - link register
+    uint64_t fp;             // 8 bytes - frame pointer
+    uint64_t sp;             // 8 bytes - stack pointer
+
+    // Stack snapshot (132 bytes)
+    uint8_t stack_snapshot[128]; // 128 bytes - stack around SP
+    uint32_t stack_size;     // 4 bytes - actual bytes captured
+
+    // Padding to 512 bytes
+    uint8_t _padding[260];   // 260 bytes
+} DetailEvent;
 ```
+
+**Note:** See `docs/specs/TRACE_SCHEMA.md` for the complete ATF v2 file format specification including bidirectional index↔detail linking.
 
 **Trigger Conditions**:
 - Process crashes or signals

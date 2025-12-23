@@ -1,5 +1,8 @@
 ---
-status: completed
+status: superseded
+superseded_by: M1_E5_I1_ATF_V2_WRITER
+date_superseded: 2025-12-23
+reason: "Protobuf encoding overhead incompatible with streaming throughput requirements. Replaced with raw binary format in new epic M1_E5_ATF_V2."
 ---
 
 # M1_E2_I3 Backlogs: ATF V4 Writer

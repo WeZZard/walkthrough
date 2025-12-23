@@ -1,7 +1,9 @@
-# M1 Native Agent MVP - 26 Iteration Breakdown (MVP Aligned)
+# M1 Native Agent MVP - 28 Iteration Breakdown (MVP Aligned)
 
 ## Overview
-Breaking down the original 10 iterations into 26 fine-grained iterations (2-4 days each) to ensure proper implementation of the per-thread ring buffer architecture and MVP requirements including ATF V4 compliance, selective persistence, and Query Engine.
+Breaking down the original 10 iterations into 28 fine-grained iterations (2-4 days each) to ensure proper implementation of the per-thread ring buffer architecture and MVP requirements including ATF V2 raw binary format, selective persistence, and Query Engine.
+
+**Note**: Epic 5 (ATF V2) supersedes the protobuf-based ATF V4 format with a raw binary format for improved performance (10M+ events/sec) and bidirectional index↔detail navigation.
 
 ## Critical Architecture Fix
 The original M1 plan missed the **per-thread ring buffer** design, implementing a shared ring buffer instead. This would have caused:
@@ -84,15 +86,24 @@ graph TD
         E4I3 --> E4I4
     end
 
-    subgraph Epic 5 – Documentation
-        E5I1[M1_E5_I1: Getting Started]
-        E5I2[M1_E5_I2: Architecture Docs]
-        E5I3[M1_E5_I3: API Reference]
-        E5I4[M1_E5_I4: Examples]
+    subgraph Epic 5 – ATF V2 Raw Binary Format
+        E5I1_ATF[M1_E5_I1: ATF V2 Writer]
+        E5I2_ATF[M1_E5_I2: ATF V2 Reader]
 
-        E5I1 --> E5I2
-        E5I2 --> E5I3
-        E5I1 --> E5I4
+        E5I1_ATF --> E5I2_ATF
+        E5I1_ATF -.->|supersedes| E2I3
+        E5I2_ATF -.->|supersedes| E4I1
+    end
+
+    subgraph Epic 6 – Documentation
+        E6I1[M1_E6_I1: Getting Started]
+        E6I2[M1_E6_I2: Architecture Docs]
+        E6I3[M1_E6_I3: API Reference]
+        E6I4[M1_E6_I4: Examples]
+
+        E6I1 --> E6I2
+        E6I2 --> E6I3
+        E6I1 --> E6I4
     end
 ```
 
@@ -288,9 +299,57 @@ Note: The previous “Broad Coverage Hooks” iteration is deferred to a later s
   - Pagination support
 - **Success**: < 100ms for common queries
 
-## Epic 5: Documentation (4 iterations)
+## Epic 5: ATF V2 - Raw Binary Trace Format (2 iterations)
 
-### M1_E5_I1: Getting Started (2 days)
+**Goal**: Replace protobuf-based ATF V4 with raw binary ATF V2 to close the M1 MVP loop.
+
+**Why New Epic?**
+- Completed epics (E2, E4) should not be extended
+- ATF format crosses both writer (E2) and reader (E4) concerns
+- Clean separation with clear supersession of old iterations
+
+### M1_E5_I1: ATF V2 Writer (3 days)
+- **Goal**: Write events in raw binary ATF v2 format (two-file, per-thread)
+- **Supersedes**: M1_E2_I3 (ATF V4 Writer)
+- **Key Features**:
+  - Per-thread files: `thread_N/index.atf` + `thread_N/detail.atf`
+  - Bidirectional linking: IndexEvent.detail_seq ↔ DetailEvent.index_seq
+  - O(1) lookup in both directions
+  - Platform timing API for genlock (timestamp_ns)
+- **Deliverables**:
+  - atf_v2_types.h with bidirectional sequence fields
+  - Index writer: Always active, writes 32-byte events
+  - Detail writer: On-demand, writes length-prefixed detail events
+  - Footer finalization for crash recovery
+- **Success**: ATF v2 output with bidirectional navigation, 10M+ events/sec
+
+### M1_E5_I2: ATF V2 Reader (3 days)
+- **Goal**: Parse raw binary ATF v2 format (two-file, per-thread)
+- **Supersedes**: M1_E4_I1 (ATF Reader)
+- **Key Features**:
+  - Memory-mapped file access
+  - Bidirectional navigation API (forward + backward lookup)
+  - Cross-thread merge-sort by timestamp_ns
+- **Deliverables**:
+  - Rust index/detail reader modules
+  - Python index/detail reader modules
+  - Bidirectional navigation API
+  - Footer-based recovery for partial files
+- **Success**: Efficient ATF v2 traversal with O(1) bidirectional navigation
+
+### Epic 5 Dependency Graph
+
+```
+M1_E5_I1 (Writer) ──────────────→ M1_E5_I2 (Reader)
+     │                                  │
+     │ supersedes                       │ supersedes
+     ▼                                  ▼
+M1_E2_I3 (ATF V4 Writer)         M1_E4_I1 (ATF Reader)
+```
+
+## Epic 6: Documentation (4 iterations)
+
+### M1_E6_I1: Getting Started (2 days)
 - **Goal**: Quick start guide
 - **Deliverables**:
   - Prerequisites
@@ -298,7 +357,7 @@ Note: The previous “Broad Coverage Hooks” iteration is deferred to a later s
   - First trace
 - **Success**: New user success
 
-### M1_E5_I2: Architecture Docs (2 days)
+### M1_E6_I2: Architecture Docs (2 days)
 - **Goal**: Technical documentation
 - **Deliverables**:
   - System overview
@@ -306,7 +365,7 @@ Note: The previous “Broad Coverage Hooks” iteration is deferred to a later s
   - Design rationale
 - **Success**: Clear understanding
 
-### M1_E5_I3: API Reference (2 days)
+### M1_E6_I3: API Reference (2 days)
 - **Goal**: Interface specification
 - **Deliverables**:
   - CLI documentation
@@ -314,7 +373,7 @@ Note: The previous “Broad Coverage Hooks” iteration is deferred to a later s
   - Error codes
 - **Success**: Complete reference
 
-### M1_E5_I4: Examples (2 days)
+### M1_E6_I4: Examples (2 days)
 - **Goal**: Learning materials
 - **Deliverables**:
   - ATF format examples
@@ -354,20 +413,24 @@ Each iteration follows this structure:
 - **Epic 2**: 17 days (7 iterations, added I7)
 - **Epic 3**: 10 days (4 iterations)
 - **Epic 4**: 10 days (4 iterations, adjusted for QE)
-- **Epic 5**: 8 days (4 iterations)
+- **Epic 5**: 6 days (2 iterations - ATF V2 format)
+- **Epic 6**: 8 days (4 iterations - Documentation)
 
-**Total**: ~62 days with sequential execution
-**Optimized**: ~40-45 days with some parallel work
+**Total**: ~68 days with sequential execution
+**Optimized**: ~45-50 days with parallel work (E5 runs after E2/E4 complete)
 
 ## MVP Alignment Summary
 
 The updated M1 plan now includes:
-- **ATF V4 Compliance**: Protobuf-based event format (M1_E2_I3)
+- **ATF V2 Raw Binary Format**: Zero-overhead binary format with bidirectional index↔detail linking (M1_E5)
+  - Supersedes M1_E2_I3 (ATF V4 Writer) and M1_E4_I1 (ATF Reader)
+  - 10M+ events/sec write throughput
+  - O(1) lookup in both directions
 - **Selective Persistence**: Marked event detection and windowed dumps (M1_E2_I7)
 - **Query Engine**: JSON-RPC server with trace analysis APIs (M1_E4)
 - **DSO Coverage**: Comprehensive hooking with exclude lists (M1_E1_I10)
 
-Total iterations increased from 25 to 26 to accommodate MVP requirements.
+Total iterations increased from 26 to 28 with Epic 5 (ATF V2) added to close the M1 MVP loop.
 
 ## Next Steps
 

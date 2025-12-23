@@ -1,3 +1,10 @@
+---
+status: superseded
+superseded_by: M1_E5_I2_ATF_V2_READER
+date_superseded: 2025-12-23
+reason: "Reader updated to parse raw binary ATF v2 format instead of protobuf. Moved to new epic M1_E5_ATF_V2."
+---
+
 # Tech Design — M1 E4 I1 ATF Reader
 
 ## Objective
