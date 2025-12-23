@@ -267,18 +267,13 @@ Where: X = milestone number, Y = epic number, Z = iteration number
 
 - **Setup/Build**: [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
 - **Architecture**: [`docs/specs/ARCHITECTURE.md`](docs/specs/ARCHITECTURE.md)
-- **Engineering Process**: `docs/technical_insights/engineering_process/active/`
-  - [Planning](docs/technical_insights/engineering_process/active/PLANNING.md)
-  - [Coding](docs/technical_insights/engineering_process/active/CODING.md)
-  - [Testing](docs/technical_insights/engineering_process/active/TESTING.md)
-  - [Integration](docs/technical_insights/engineering_process/active/INTEGRATION.md)
-  - [Debugging](docs/technical_insights/engineering_process/active/DEBUGGING.md)
+- **Engineering Process**: `docs/technical_insights/engineering_process/`
 
 **Additional references**:
 
 - Business analysis: `docs/business/`
 - User stories: `docs/user_stories/`
-- ADA Core insights: `docs/technical_insights/ada_core/`
+- ADA technical insights: `docs/technical_insights/ada/`
 - Progress tracking: `docs/progress_trackings/`
 
 Do NOT duplicate content from these documents - reference them.
