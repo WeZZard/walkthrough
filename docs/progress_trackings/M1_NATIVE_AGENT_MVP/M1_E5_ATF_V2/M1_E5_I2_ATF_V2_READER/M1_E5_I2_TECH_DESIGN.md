@@ -1,5 +1,5 @@
 ---
-status: active
+status: completed
 date: 2025-12-23
 supersedes: M1_E4_I1_ATF_READER
 ---
