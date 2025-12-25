@@ -300,7 +300,7 @@ cargo install cargo-llvm-cov
 
 ## Next Steps
 
-1. Read the [Architecture Documentation](specs/ARCHITECTURE.md)
+1. Read the [System Architecture](tech-specs/behaviors/BH-001-system-architecture.md)
 2. Review [Engineering Standards](engineering_efficiency/ENGINEERING_STANDARDS.md)
 3. Check [Progress Tracking](progress_trackings/) for current development status
 4. See component-specific docs in each component's `docs/` directory

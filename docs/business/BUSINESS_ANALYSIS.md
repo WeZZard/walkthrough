@@ -126,13 +126,13 @@ This document consolidates business reasoning backed by the repository’s user 
 ## 15. Alignment to repo governance
 
 - Aligned with `AGENT.md` intent; fulfills `docs/user_stories/USER_STORIES.md` (AI Agent first; human supervisor second).
-- Implements `docs/specs/TRACER_SPEC.md`, `docs/specs/QUERY_ENGINE_SPEC.md`, and `docs/specs/PERMISSIONS_AND_ENVIRONMENT.md` with `docs/specs/PLATFORM_LIMITATIONS.md` guardrails.
+- Implements `BH-004-function-tracing`, `BH-005-ring-buffer`, `BH-006-backpressure`, `BH-010-query-api`, and `EV-001-permissions-environment` with `CN-001-platform-limitations` guardrails.
 - Enforced by `docs/engineering_efficiency/TOP_DOWN_VALIDATION_FRAMEWORK.md` and `docs/engineering_efficiency/INTEGRATION_PROCESS_SPECIFICATION.md` to prevent drift.
 
 ---
 
 ### Appendix: Technical underpinnings referenced
 
-- Two‑lane architecture (index/detail) and SPSC ring design: see `docs/tech_designs/NATIVE_TRACER_ARCHITECTURE.md` and `docs/technical_insights/TWO_LANE_ARCHITECTURE_EXPLAINED.md`.
-- Platform constraints and remediation: see `docs/specs/PERMISSIONS_AND_ENVIRONMENT.md` and `docs/specs/PLATFORM_LIMITATIONS.md`.
-- Query Engine contract and budget‑aware narratives: see `docs/specs/QUERY_ENGINE_SPEC.md`.
+- Two‑lane architecture (index/detail) and SPSC ring design: see `BH-001-system-architecture`, `BH-002-atf-index-format`, `BH-003-atf-detail-format`, `BH-005-ring-buffer`.
+- Platform constraints and remediation: see `EV-001-permissions-environment` and `CN-001-platform-limitations`.
+- Query Engine contract and budget‑aware narratives: see `BH-010-query-api` and `BH-012-narrative-generation`.
