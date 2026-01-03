@@ -42,7 +42,7 @@ extern "C" {
 #include <tracer_backend/agent/comprehensive_hooks.h>
 #include <tracer_backend/agent/dso_management.h>
 
-#define ADA_MINIMAL_HOOKS 1
+// #define ADA_MINIMAL_HOOKS 1  // Disabled to enable full event capture
 
 // Forward declare the C callbacks
 extern "C" {

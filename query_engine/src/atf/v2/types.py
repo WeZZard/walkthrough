@@ -44,11 +44,12 @@ class IndexHeader(NamedTuple):
         if len(data) < 64:
             raise ValueError(f"Header too small: {len(data)} < 64")
 
-        # Format: 4s B B B B I I B 3x I I I Q Q Q Q
-        # magic, endian, version, arch, os, flags, thread_id, clock_type, (3 reserved),
-        # (4 reserved), event_size, event_count, events_offset, footer_offset,
+        # Format: 4s B B B B I I B 3x 4x I I Q Q Q Q
+        # magic, endian, version, arch, os, flags, thread_id, clock_type,
+        # (3 reserved1 - skipped), (4 reserved2 - skipped),
+        # event_size, event_count, events_offset, footer_offset,
         # time_start_ns, time_end_ns
-        values = struct.unpack('<4sBBBBII B3x I II QQ QQ', data[:64])
+        values = struct.unpack('<4sBBBBII B3x 4x II QQ QQ', data[:64])
 
         return cls(
             magic=values[0],
