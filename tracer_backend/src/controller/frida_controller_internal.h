@@ -5,13 +5,13 @@
 #include <atomic>
 #include <string>
 #include <cstdint>
-#include <thread>
 
 extern "C" {
 #include <frida-core.h>
 #include <tracer_backend/utils/tracer_types.h>
 #include <tracer_backend/utils/shared_memory.h>
 #include <tracer_backend/utils/thread_registry.h>
+#include <tracer_backend/drain_thread/drain_thread.h>
 }
 
 // Forward declare internal C++ types
@@ -99,8 +99,11 @@ private:
     bool initialize_shared_memory();
     bool initialize_ring_buffers();
     void cleanup_frida_objects();
-    void drain_thread_main();
     std::string build_shm_name(const char* role, pid_t pid_hint = 0);
+
+    // ATF session management
+    bool start_atf_session();
+    void stop_atf_session();
     
     // Static callbacks for Frida signals
     static void on_detached_callback(FridaSession* session, 
@@ -142,13 +145,9 @@ private:
     std::unique_ptr<RingBuffer> index_ring_;
     std::unique_ptr<RingBuffer> detail_ring_;
     
-    // Drain thread
-    std::unique_ptr<std::thread> drain_thread_;
-    std::atomic<bool> drain_running_{false};
-    uint32_t drain_ticks_{0};
-    
-    // Output
-    FILE* output_file_{nullptr};
+    // Drain thread (C-based with ATF session management)
+    DrainThread* drain_{nullptr};
+    std::string session_dir_;
     
     // Statistics
     mutable TracerStats stats_{};

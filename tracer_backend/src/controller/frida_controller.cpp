@@ -215,16 +215,32 @@ FridaController::FridaController(const std::string& output_dir)
         throw std::runtime_error("Failed to initialize ring buffers");
     }
     
-    // Start drain thread
-    drain_running_ = true;
-    drain_thread_ = std::make_unique<std::thread>(&FridaController::drain_thread_main, this);
+    // Create and start C-based drain thread (with ATF session management)
+    DrainConfig drain_config;
+    drain_config_default(&drain_config);
+    drain_ = drain_thread_create(registry_, &drain_config);
+    if (!drain_) {
+        cleanup_frida_objects();
+        throw std::runtime_error("Failed to create drain thread");
+    }
+
+    if (drain_thread_start(drain_) != 0) {
+        drain_thread_destroy(drain_);
+        drain_ = nullptr;
+        cleanup_frida_objects();
+        throw std::runtime_error("Failed to start drain thread");
+    }
 }
 
 FridaController::~FridaController() {
-    // Stop drain thread
-    drain_running_ = false;
-    if (drain_thread_ && drain_thread_->joinable()) {
-        drain_thread_->join();
+    // Stop ATF session first (finalizes files)
+    stop_atf_session();
+
+    // Stop and destroy C-based drain thread
+    if (drain_) {
+        drain_thread_stop(drain_);
+        drain_thread_destroy(drain_);
+        drain_ = nullptr;
     }
 
     // Deinitialize thread registry (testing/runtime hygiene)
@@ -232,16 +248,10 @@ FridaController::~FridaController() {
         thread_registry_deinit(registry_);
         registry_ = nullptr;
     }
-    
+
     // Cleanup Frida objects
     cleanup_frida_objects();
-    
-    // Close output file
-    if (output_file_) {
-        fclose(output_file_);
-        output_file_ = nullptr;
-    }
-    
+
     // Cleanup event loop
     if (main_loop_) {
         g_main_loop_quit(main_loop_);
@@ -252,6 +262,66 @@ FridaController::~FridaController() {
         g_main_context_pop_thread_default(main_context_);
         g_main_context_unref(main_context_);
     }
+}
+
+// ============================================================================
+// ATF Session Management
+// ============================================================================
+
+bool FridaController::start_atf_session() {
+    if (!drain_) {
+        g_printerr("[Controller] Cannot start ATF session: drain thread not initialized\n");
+        return false;
+    }
+
+    if (!session_dir_.empty()) {
+        g_debug("[Controller] ATF session already started: %s\n", session_dir_.c_str());
+        return true;  // Already started
+    }
+
+    // Build session directory path: output_dir/session_YYYYMMDD_HHMMSS/pid_XXXXX
+    char timestamp[64];
+    time_t now = time(nullptr);
+    struct tm* tm_info = localtime(&now);
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm_info);
+
+    char session_path[1024];
+    snprintf(session_path, sizeof(session_path),
+             "%s/session_%s/pid_%u",
+             output_dir_.c_str(), timestamp, static_cast<unsigned int>(pid_));
+
+    session_dir_ = session_path;
+
+    // Create session directory hierarchy
+    char mkdir_cmd[1100];
+    snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", session_dir_.c_str());
+    int rc = system(mkdir_cmd);
+    if (rc != 0) {
+        g_printerr("[Controller] Failed to create session directory: %s\n", session_dir_.c_str());
+        session_dir_.clear();
+        return false;
+    }
+
+    // Start ATF session in drain thread
+    rc = drain_thread_start_session(drain_, session_dir_.c_str());
+    if (rc != 0) {
+        g_printerr("[Controller] Failed to start ATF session: %d\n", rc);
+        session_dir_.clear();
+        return false;
+    }
+
+    g_print("[Controller] ATF session started: %s\n", session_dir_.c_str());
+    return true;
+}
+
+void FridaController::stop_atf_session() {
+    if (!drain_ || session_dir_.empty()) {
+        return;  // Nothing to stop
+    }
+
+    drain_thread_stop_session(drain_);
+    g_print("[Controller] ATF session finalized: %s\n", session_dir_.c_str());
+    session_dir_.clear();
 }
 
 // ============================================================================
@@ -594,7 +664,10 @@ int FridaController::detach() {
     if (!session_) {
         return -1;
     }
-    
+
+    // Stop ATF session before detaching (finalizes files)
+    stop_atf_session();
+
     state_ = PROCESS_STATE_DETACHING;
     control_block_->process_state = PROCESS_STATE_DETACHING;
     
@@ -647,7 +720,13 @@ int FridaController::resume() {
     
     state_ = PROCESS_STATE_RUNNING;
     control_block_->process_state = PROCESS_STATE_RUNNING;
-    
+
+    // Start ATF session when process begins running
+    if (!start_atf_session()) {
+        g_printerr("[Controller] Warning: Failed to start ATF session (tracing continues without file output)\n");
+        // Continue anyway - tracing still works via ring buffers
+    }
+
     return 0;
 }
 
@@ -1250,105 +1329,6 @@ void FridaController::on_message(const gchar* message, GBytes* data) {
             g_debug("[Controller] Parsed symbol estimate from loader: %u\n", count);
         }
     }
-}
-
-// ============================================================================
-// Drain thread
-// ============================================================================
-
-void FridaController::drain_thread_main() {
-    g_debug("Drain thread started\n");
-    
-    constexpr size_t INDEX_BATCH_SIZE = 1000;
-    constexpr size_t DETAIL_BATCH_SIZE = 100;
-    
-    auto index_events = std::make_unique<IndexEvent[]>(INDEX_BATCH_SIZE);
-    auto detail_events = std::make_unique<DetailEvent[]>(DETAIL_BATCH_SIZE);
-    
-    g_debug("Drain thread initialized\n");
-    
-    while (drain_running_) {
-        size_t index_count = 0;
-        size_t detail_count = 0;
-
-        if (registry_) {
-            // Drain per-thread lanes when registry is available
-            uint32_t cap = thread_registry_get_capacity(registry_);
-            for (uint32_t i = 0; i < cap; ++i) {
-                ::ThreadLaneSet* lanes = thread_registry_get_thread_at(registry_, i);
-                if (!lanes) continue;
-                ::Lane* idx_lane = thread_lanes_get_index_lane(lanes);
-                RingBufferHeader* idx_hdr = thread_registry_get_active_ring_header(registry_, idx_lane);
-                if (idx_hdr) {
-                    size_t n = ring_buffer_read_batch_raw(idx_hdr, sizeof(IndexEvent), index_events.get(), INDEX_BATCH_SIZE);
-                    if (n > 0) {
-                        index_count += n;
-                        stats_.events_captured += n;
-                        stats_.bytes_written += n * sizeof(IndexEvent);
-                        if (output_file_) {
-                            fwrite(index_events.get(), sizeof(IndexEvent), n, output_file_);
-                        }
-                    }
-                }
-
-                ::Lane* det_lane = thread_lanes_get_detail_lane(lanes);
-                RingBufferHeader* det_hdr = thread_registry_get_active_ring_header(registry_, det_lane);
-                if (det_hdr) {
-                    size_t n = ring_buffer_read_batch_raw(det_hdr, sizeof(DetailEvent), detail_events.get(), DETAIL_BATCH_SIZE);
-                    if (n > 0) {
-                        detail_count += n;
-                        stats_.events_captured += n;
-                        stats_.bytes_written += n * sizeof(DetailEvent);
-                        if (output_file_) {
-                            fwrite(detail_events.get(), sizeof(DetailEvent), n, output_file_);
-                        }
-                    }
-                }
-            }
-        }
-        // Always also drain process-global rings (compatibility path)
-        size_t g_index = index_ring_->read_batch(index_events.get(), INDEX_BATCH_SIZE);
-        if (g_index > 0) {
-            stats_.events_captured += g_index;
-            stats_.bytes_written += g_index * sizeof(IndexEvent);
-            if (output_file_) {
-                fwrite(index_events.get(), sizeof(IndexEvent), g_index, output_file_);
-            }
-        }
-        size_t g_detail = detail_ring_->read_batch(detail_events.get(), DETAIL_BATCH_SIZE);
-        if (g_detail > 0) {
-            stats_.events_captured += g_detail;
-            stats_.bytes_written += g_detail * sizeof(DetailEvent);
-            if (output_file_) {
-                fwrite(detail_events.get(), sizeof(DetailEvent), g_detail, output_file_);
-            }
-        }
-        
-        // Heartbeat update - use same clock as agent
-#ifdef __APPLE__
-        uint64_t now_ns = mach_absolute_time();
-#else
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        uint64_t now_ns = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-#endif
-        cb_set_heartbeat_ns(control_block_, now_ns);
-
-        // Simple mode progression after a few ticks if registry is present
-        // This drives registry_mode transitions as per TECH_DESIGN requirements
-        if (registry_) {
-            drain_ticks_++;
-            if (drain_ticks_ == 5) {  // After 500ms warm-up
-                cb_set_registry_mode(control_block_, REGISTRY_MODE_PER_THREAD_ONLY);
-                cb_inc_mode_transitions(control_block_);
-            }
-        }
-
-        // Sleep for 100ms
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    
-    g_debug("Drain thread exiting\n");
 }
 
 } // namespace internal

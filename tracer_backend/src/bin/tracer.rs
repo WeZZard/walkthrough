@@ -160,6 +160,47 @@ fn main() -> Result<()> {
     println!("Bytes written:   {}", final_stats.bytes_written);
     println!("Drain cycles:    {}", final_stats.drain_cycles);
 
+    // Find and display session directory
+    if let Ok(entries) = std::fs::read_dir(&output_dir) {
+        let mut sessions: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.starts_with("session_"))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        // Sort by name (timestamp is in name, so alphabetical = chronological)
+        sessions.sort_by_key(|e| e.file_name());
+
+        // Get the most recent session
+        if let Some(session) = sessions.last() {
+            let session_path = session.path();
+            // Find the pid_XXXXX subdirectory
+            if let Ok(pid_entries) = std::fs::read_dir(&session_path) {
+                for pid_entry in pid_entries.filter_map(|e| e.ok()) {
+                    let pid_dir = pid_entry.path();
+                    if pid_dir.is_dir() {
+                        println!("\n=== Session Output ===");
+                        println!("Session directory: {}", pid_dir.display());
+
+                        // Count ATF files
+                        if let Ok(thread_entries) = std::fs::read_dir(&pid_dir) {
+                            let atf_count = thread_entries
+                                .filter_map(|e| e.ok())
+                                .filter(|e| e.path().is_dir())
+                                .count();
+                            println!("Thread directories: {}", atf_count);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     println!("\nTracer completed successfully");
     Ok(())
 }

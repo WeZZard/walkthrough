@@ -63,6 +63,8 @@ target_link_libraries(tracer_controller
     PUBLIC
         ${FRIDA_CORE_LIBRARY}
         tracer_utils
+        tracer_drain_thread
+        tracer_atf_writer
         Threads::Threads
 )
 
