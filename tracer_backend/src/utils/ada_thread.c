@@ -1,4 +1,5 @@
 #include <tracer_backend/ada/thread.h>
+#include <tracer_backend/utils/ring_pool.h>
 
 #include <pthread.h>
 #include <string.h>
@@ -38,6 +39,13 @@ ada_tls_state_t* ada_get_tls_state(void) {
 }
 
 void ada_reset_tls_state(void) {
+    // Destroy ring pools before clearing state
+    if (g_tls_state.index_pool) {
+        ring_pool_destroy(g_tls_state.index_pool);
+    }
+    if (g_tls_state.detail_pool) {
+        ring_pool_destroy(g_tls_state.detail_pool);
+    }
     memset(&g_tls_state, 0, sizeof(g_tls_state));
     tls_my_lanes = NULL;
     ada_backpressure_state_init(&g_tls_state.backpressure[0], NULL);
@@ -91,6 +99,10 @@ ThreadLaneSet* ada_register_current_thread(void) {
     g_tls_state.thread_id = ada_get_thread_id_portable();
     g_tls_state.registration_time = ada_now_monotonic_ns();
     // Slot id is optional; not exposed via API, leave as 0
+
+    // Create ring pools for swap-on-overflow support
+    g_tls_state.index_pool = ring_pool_create(reg, lanes, 0);  // 0 = index lane
+    g_tls_state.detail_pool = ring_pool_create(reg, lanes, 1); // 1 = detail lane
 
     // Synchronize thread_registry TLS too
     tls_my_lanes = lanes;

@@ -70,7 +70,7 @@ public:
     // State query
     ProcessState get_state() const { return state_; }
     FlightRecorderState get_flight_state() const;
-    TracerStats get_stats() const { return stats_; }
+    TracerStats get_stats() const;
     
 private:
     // Spawn methods

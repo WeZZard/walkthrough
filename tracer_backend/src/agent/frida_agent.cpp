@@ -30,6 +30,8 @@ extern "C" {
 #include <tracer_backend/utils/shared_memory.h>
 // Thread registry API for per-thread lanes
 #include <tracer_backend/utils/thread_registry.h>
+// Ring pool for swap-on-overflow
+#include <tracer_backend/utils/ring_pool.h>
 // SHM directory mapping helpers (M1_E1_I8)
 #include <tracer_backend/utils/shm_directory.h>
 #include <tracer_backend/metrics/thread_metrics.h>
@@ -375,9 +377,11 @@ bool AgentContext::open_shared_memory() {
         (void)shm_dir_map_local_bases(&control_block_->shm_directory);
     }
 
-    // Initialize registry_mode to our current state
+    // Read registry_mode from controller (do NOT overwrite it)
+    // The controller sets this to DUAL_WRITE when registry is enabled
     if (control_block_) {
-        __atomic_store_n(&control_block_->registry_mode, agent_mode_state_.mode, __ATOMIC_RELEASE);
+        agent_mode_state_.mode = __atomic_load_n(&control_block_->registry_mode, __ATOMIC_ACQUIRE);
+        LOG_LIFECYCLE("[Agent] Read registry_mode from controller: %u\n", agent_mode_state_.mode);
     }
 
     // Try to open and attach to thread registry (optional, can be disabled by env)
@@ -388,23 +392,32 @@ bool AgentContext::open_shared_memory() {
     if (!disable_registry) {
         size_t registry_size = thread_registry_calculate_memory_size_with_capacity(MAX_THREADS);
         auto reg_c = shared_memory_open_unique("registry", host_pid_, session_id_, registry_size);
+
+        // Unconditional diagnostic logging for registry status
+        LOG_LIFECYCLE("[Agent] Registry shm open: %s (host_pid=%u, session_id=0x%08x)\n",
+                      reg_c ? "SUCCESS" : "FAILED", host_pid_, session_id_);
+
         if (reg_c) {
             // Wrap in RAII holder and keep as member to keep mapping alive
             SharedMemoryRef shm_reg(reinterpret_cast<SharedMemoryRef*>(reg_c));
             void* addr = shm_reg.get_address();
             ::ThreadRegistry* reg_handle = thread_registry_attach(addr);
+
+            LOG_LIFECYCLE("[Agent] Registry attach: %s (addr=%p)\n",
+                          reg_handle ? "SUCCESS" : "FAILED", addr);
+
             if (reg_handle) {
                 ada_set_global_registry(reg_handle);
-                if (ada::internal::g_agent_verbose) LOG_LIFECYCLE("[Agent] Attached thread registry at %p (size=%zu)\n", addr, registry_size);
+                LOG_LIFECYCLE("[Agent] Global registry set: %p\n", (void*)reg_handle);
                 shm_registry_ = std::move(shm_reg);
             } else {
                 LOG_LIFECYCLE("[Agent] Failed to attach thread registry at %p\n", addr);
             }
         } else {
-            if (ada::internal::g_agent_verbose) LOG_LIFECYCLE("[Agent] Registry segment not found; running with process-global rings\n");
+            LOG_LIFECYCLE("[Agent] Registry segment not found; using global rings\n");
         }
     } else {
-        if (ada::internal::g_agent_verbose) LOG_LIFECYCLE("[Agent] Registry disabled by ADA_DISABLE_REGISTRY\n");
+        LOG_LIFECYCLE("[Agent] Registry disabled by ADA_DISABLE_REGISTRY\n");
     }
 
     return true;
@@ -763,6 +776,37 @@ void AgentContext::send_hook_summary() {
 // Update registry_mode via AgentModeState state machine
 void AgentContext::update_registry_mode(uint64_t now_ns, uint64_t hb_timeout_ns) {
     if (!control_block_) return;
+
+    // Diagnostic: log health check values (one-time)
+    static bool logged_health_check = false;
+    if (!logged_health_check) {
+        uint32_t ready = __atomic_load_n(&control_block_->registry_ready, __ATOMIC_ACQUIRE);
+        uint32_t epoch = __atomic_load_n(&control_block_->registry_epoch, __ATOMIC_ACQUIRE);
+        uint64_t hb = __atomic_load_n(&control_block_->drain_heartbeat_ns, __ATOMIC_ACQUIRE);
+        bool cond1 = (ready != 0);
+        bool cond2 = (epoch > 0);
+        bool cond3 = (hb != 0);
+        bool cond4 = (now_ns >= hb);
+        bool cond5 = ((now_ns - hb) <= hb_timeout_ns);
+        bool healthy = cond1 && cond2 && cond3 && cond4 && cond5;
+        LOG_LIFECYCLE("[Agent] Health check: ready=%u(%s), epoch=%u(%s), hb=%llu(%s), now_ns=%llu, hb_timeout=%llu\n",
+                      ready, cond1 ? "OK" : "FAIL",
+                      epoch, cond2 ? "OK" : "FAIL",
+                      (unsigned long long)hb, cond3 ? "OK" : "FAIL",
+                      (unsigned long long)now_ns,
+                      (unsigned long long)hb_timeout_ns);
+        LOG_LIFECYCLE("[Agent] Health check: now>=hb=%s, (now-hb)<=timeout=%s, healthy=%s\n",
+                      cond4 ? "OK" : "FAIL",
+                      cond5 ? "OK" : "FAIL",
+                      healthy ? "YES" : "NO");
+        if (!cond5 && hb != 0) {
+            LOG_LIFECYCLE("[Agent] Health check: delta=%llu vs timeout=%llu\n",
+                          (unsigned long long)(now_ns - hb),
+                          (unsigned long long)hb_timeout_ns);
+        }
+        logged_health_check = true;
+    }
+
     AgentModeState before = agent_mode_state_;
     agent_mode_tick(&agent_mode_state_, control_block_, now_ns, hb_timeout_ns);
     if (before.mode != agent_mode_state_.mode) {
@@ -853,7 +897,15 @@ uint32_t hash_string(const char* str) {
 
 uint64_t platform_get_timestamp() {
 #ifdef __APPLE__
-    return mach_absolute_time();
+    // mach_absolute_time() returns ticks, not nanoseconds
+    // Convert to nanoseconds using mach_timebase_info
+    static mach_timebase_info_data_t timebase_info = {0, 0};
+    if (timebase_info.denom == 0) {
+        mach_timebase_info(&timebase_info);
+    }
+    uint64_t mach_time = mach_absolute_time();
+    // Convert to nanoseconds: mach_time * numer / denom
+    return mach_time * timebase_info.numer / timebase_info.denom;
 #else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -998,6 +1050,17 @@ static void capture_index_event(AgentContext* ctx, HookData* hook,
     uint32_t mode = __atomic_load_n(&ctx->control_block()->registry_mode, __ATOMIC_ACQUIRE);
     bool wrote = false;
     bool wrote_pt = false;
+
+    // One-time diagnostic log per thread to show lane status
+    static thread_local bool logged_lane_status = false;
+    if (!logged_lane_status) {
+        ::ThreadRegistry* diag_reg = ada_get_global_registry();
+        ThreadLaneSet* diag_lanes = ada_get_thread_lane();
+        LOG_LIFECYCLE("[Agent] First hook on thread: registry=%p, lanes=%p, mode=%u\n",
+                      (void*)diag_reg, (void*)diag_lanes, mode);
+        logged_lane_status = true;
+    }
+
     // Attempt per-thread path if allowed by mode
     if (mode == REGISTRY_MODE_DUAL_WRITE || mode == REGISTRY_MODE_PER_THREAD_ONLY) {
         ada_tls_state_t* ada_tls = ada_get_tls_state();
@@ -1007,13 +1070,57 @@ static void capture_index_event(AgentContext* ctx, HookData* hook,
             metrics = thread_lanes_get_metrics(lanes);
             if (ada_tls) ada_tls->metrics = metrics;
         }
-        if (lanes) {
-            Lane* idx_lane = thread_lanes_get_index_lane(lanes);
-            ::ThreadRegistry* reg = ada_get_global_registry();
-            if (reg) {
-                RingBufferHeader* hdr = thread_registry_get_active_ring_header(reg, idx_lane);
+        if (lanes && ada_tls) {
+            // Use ring pool for swap-on-overflow support
+            ::RingPool* index_pool = ada_tls->index_pool;
+
+            // One-time diagnostic for per-thread write path
+            static thread_local bool logged_pt_path = false;
+            if (!logged_pt_path) {
+                LOG_LIFECYCLE("[Agent] Per-thread write path: lanes=%p, index_pool=%p\n",
+                              (void*)lanes, (void*)index_pool);
+                logged_pt_path = true;
+            }
+
+            if (index_pool) {
+                RingBufferHeader* hdr = ring_pool_get_active_header(index_pool);
+
+                // One-time diagnostic for ring buffer header
+                static thread_local bool logged_hdr = false;
+                if (!logged_hdr) {
+                    LOG_LIFECYCLE("[Agent] Ring buffer header: hdr=%p\n", (void*)hdr);
+                    if (hdr) {
+                        LOG_LIFECYCLE("[Agent] Ring buffer hdr: capacity=%u, read_pos=%u, write_pos=%u\n",
+                                      hdr->capacity, hdr->read_pos, hdr->write_pos);
+                    }
+                    logged_hdr = true;
+                }
+
                 if (hdr) {
                     wrote_pt = ring_buffer_write_raw(hdr, sizeof(IndexEvent), &event);
+                    if (!wrote_pt) {
+                        // Ring is full - swap to a new ring and retry
+                        uint32_t old_ring_idx = UINT32_MAX;
+                        if (ring_pool_swap_active(index_pool, &old_ring_idx)) {
+                            // Successfully swapped, get new active header and retry write
+                            hdr = ring_pool_get_active_header(index_pool);
+                            if (hdr) {
+                                wrote_pt = ring_buffer_write_raw(hdr, sizeof(IndexEvent), &event);
+                            }
+                        } else {
+                            // Pool exhaustion - try to recover
+                            if (ring_pool_handle_exhaustion(index_pool)) {
+                                // Recovered, try swap again
+                                if (ring_pool_swap_active(index_pool, &old_ring_idx)) {
+                                    hdr = ring_pool_get_active_header(index_pool);
+                                    if (hdr) {
+                                        wrote_pt = ring_buffer_write_raw(hdr, sizeof(IndexEvent), &event);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (wrote_pt) {
                         LOG_EVENTS("[Agent] Wrote index event (per-thread)\n");
                         ctx->increment_events_emitted();
@@ -1022,6 +1129,32 @@ static void capture_index_event(AgentContext* ctx, HookData* hook,
                         }
                     } else if (metrics) {
                         ada_thread_metrics_record_ring_full(metrics);
+                    }
+                } else {
+                    // Log that hdr is NULL - this would explain missing events
+                    static thread_local bool logged_null_hdr = false;
+                    if (!logged_null_hdr) {
+                        LOG_LIFECYCLE("[Agent] WARN: Ring buffer header is NULL for index_pool=%p\n",
+                                      (void*)index_pool);
+                        logged_null_hdr = true;
+                    }
+                }
+            } else {
+                // Fallback: no ring pool, use direct registry access
+                Lane* idx_lane = thread_lanes_get_index_lane(lanes);
+                ::ThreadRegistry* reg = ada_get_global_registry();
+                if (reg) {
+                    RingBufferHeader* hdr = thread_registry_get_active_ring_header(reg, idx_lane);
+                    if (hdr) {
+                        wrote_pt = ring_buffer_write_raw(hdr, sizeof(IndexEvent), &event);
+                        if (wrote_pt) {
+                            ctx->increment_events_emitted();
+                            if (metrics) {
+                                ada_thread_metrics_record_event_written(metrics, sizeof(IndexEvent));
+                            }
+                        } else if (metrics) {
+                            ada_thread_metrics_record_ring_full(metrics);
+                        }
                     }
                 }
             }

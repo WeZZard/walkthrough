@@ -16,6 +16,9 @@ extern "C" {
 #include <tracer_backend/utils/thread_registry.h>
 #include <tracer_backend/backpressure/backpressure.h>
 
+// Forward declaration for RingPool (actual type is AdaRingPool in ring_pool.h)
+struct AdaRingPool;
+
 // Thread-local storage for fast path access
 typedef struct ada_tls_state {
     ThreadLaneSet* lanes;           // Cached per-thread lanes (NULL = unregistered)
@@ -28,6 +31,10 @@ typedef struct ada_tls_state {
     uint8_t slot_id;                // Optional slot id (0 if unknown)
     uint8_t _pad1[6];               // Padding
     uint64_t registration_time;     // Timestamp of registration
+
+    // Ring pools for automatic swap on overflow
+    struct AdaRingPool* index_pool; // Ring pool for index lane (NULL if not using pools)
+    struct AdaRingPool* detail_pool;// Ring pool for detail lane (NULL if not using pools)
 
     // Statistics
     uint64_t event_count;           // Events emitted by this thread (best-effort)

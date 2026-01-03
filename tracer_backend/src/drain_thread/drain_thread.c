@@ -259,6 +259,7 @@ static uint32_t drain_lane(DrainThread* drain,
 
     const uint32_t limit = compute_effective_limit(drain, final_pass);
     uint32_t processed = 0;
+    uint32_t events_read = 0;
 
     // Get ATF writer for this thread if session is active
     AtfThreadWriter* writer = NULL;
@@ -266,6 +267,7 @@ static uint32_t drain_lane(DrainThread* drain,
         writer = get_or_create_thread_writer(drain, slot_index);
     }
 
+    // First try the queue-based ring swap mechanism
     while (processed < limit) {
         uint32_t ring_idx = lane_take_ring(lane);
         if (ring_idx == UINT32_MAX) {
@@ -292,6 +294,7 @@ static uint32_t drain_lane(DrainThread* drain,
                             &detail_event,  // Full detail payload
                             sizeof(DetailEvent)
                         );
+                        events_read++;
                     }
                 } else {
                     // Index lane - read IndexEvents
@@ -307,6 +310,7 @@ static uint32_t drain_lane(DrainThread* drain,
                             NULL,  // No detail payload for index events
                             0
                         );
+                        events_read++;
                     }
                 }
             }
@@ -314,6 +318,50 @@ static uint32_t drain_lane(DrainThread* drain,
 
         return_ring_to_producer(lane, ring_idx);
         ++processed;
+    }
+
+    // Fallback: directly read from active ring buffer if queue was empty
+    // This handles the case where the agent writes directly to the active
+    // ring buffer without using the ring swap mechanism.
+    if (processed == 0 && writer && drain->registry) {
+        RingBufferHeader* active_hdr = thread_registry_get_active_ring_header(
+            drain->registry, lane);
+
+        if (active_hdr) {
+            if (is_detail) {
+                DetailEvent detail_event;
+                while (ring_buffer_read_raw(active_hdr, sizeof(DetailEvent), &detail_event)) {
+                    atf_thread_writer_write_event(
+                        writer,
+                        detail_event.timestamp,
+                        detail_event.function_id,
+                        detail_event.event_kind,
+                        detail_event.call_depth,
+                        &detail_event,
+                        sizeof(DetailEvent)
+                    );
+                    events_read++;
+                }
+            } else {
+                IndexEvent index_event;
+                while (ring_buffer_read_raw(active_hdr, sizeof(IndexEvent), &index_event)) {
+                    atf_thread_writer_write_event(
+                        writer,
+                        index_event.timestamp,
+                        index_event.function_id,
+                        index_event.event_kind,
+                        index_event.call_depth,
+                        NULL,
+                        0
+                    );
+                    events_read++;
+                }
+            }
+            // Count as one processed "ring" for metrics if we read any events
+            if (events_read > 0) {
+                processed = 1;
+            }
+        }
     }
 
     if (out_hit_limit) {
@@ -335,6 +383,14 @@ static uint32_t drain_lane(DrainThread* drain,
         atomic_fetch_add_explicit(&drain->metrics.per_thread_rings[slot_index][is_detail ? 1 : 0],
                                   processed,
                                   memory_order_relaxed);
+    }
+
+    // Track actual events drained (used by FridaController::get_stats())
+    if (events_read > 0) {
+        atomic_fetch_add_explicit(&drain->metrics.total_events_drained, events_read, memory_order_relaxed);
+        // Estimate bytes: IndexEvent = 32 bytes, DetailEvent = varies
+        size_t event_size = is_detail ? sizeof(DetailEvent) : sizeof(IndexEvent);
+        atomic_fetch_add_explicit(&drain->metrics.total_bytes_drained, events_read * event_size, memory_order_relaxed);
     }
 
     return processed;

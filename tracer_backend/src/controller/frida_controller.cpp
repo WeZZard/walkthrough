@@ -435,6 +435,10 @@ bool FridaController::initialize_shared_memory() {
         cb_set_registry_version(control_block_, 1);
         cb_set_registry_epoch(control_block_, 1);
         cb_set_registry_ready(control_block_, 1);
+        // Set initial heartbeat so agent sees a healthy registry immediately
+        // This prevents the agent from falling back to GLOBAL_ONLY on first tick
+        uint64_t now_ns = static_cast<uint64_t>(g_get_monotonic_time()) * 1000;
+        cb_set_heartbeat_ns(control_block_, now_ns);
         // Begin with dual-write to warm up, then controller will transition later
         cb_set_registry_mode(control_block_, REGISTRY_MODE_DUAL_WRITE);
     } else {
@@ -1189,8 +1193,23 @@ FlightRecorderState FridaController::get_flight_state() const {
     if (!control_block_) {
         return FLIGHT_RECORDER_IDLE;
     }
-    
+
     return control_block_->flight_state;
+}
+
+TracerStats FridaController::get_stats() const {
+    TracerStats result = {};
+
+    if (drain_) {
+        DrainMetrics dm;
+        drain_thread_get_metrics(drain_, &dm);
+
+        result.events_captured = dm.total_events_drained;
+        result.bytes_written = dm.total_bytes_drained;
+        // Note: active_threads and hooks_installed would need additional tracking
+    }
+
+    return result;
 }
 
 // ============================================================================
