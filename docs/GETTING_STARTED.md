@@ -138,9 +138,8 @@ cd tracer && cargo build --release
 # Build only the backend (C/C++)
 cd tracer_backend && cargo build --release
 
-# Build Python components
-cd query_engine && maturin develop
-cd mcp_server && pip install -e .
+# Build query engine
+cargo build -p query_engine --release
 ```
 
 ## Running Tests
@@ -165,9 +164,8 @@ cargo test -p tracer
 ./target/release/tracer_backend/test/test_ring_buffer
 ./target/release/tracer_backend/test/test_shared_memory
 
-# Python tests
-cd query_engine && pytest
-cd mcp_server && pytest
+# Query engine tests
+cargo test -p query_engine
 ```
 
 ## Coverage Collection

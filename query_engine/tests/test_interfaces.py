@@ -45,53 +45,6 @@ def test_interfaces_compile():
     assert callable(create_atf_writer)
     assert callable(create_query_engine)
 
-def test_mcp_interfaces_compile():
-    """Test that MCP interfaces compile."""
-    import sys
-    mcp_path = Path(__file__).parent.parent.parent / "mcp_server" / "src"
-    
-    # Remove existing paths that might conflict
-    original_path = sys.path.copy()
-    sys.path = [str(mcp_path)] + [p for p in sys.path if 'query_engine' not in p]
-    
-    # Reimport to get the MCP interfaces module
-    import importlib
-    if 'interfaces' in sys.modules:
-        del sys.modules['interfaces']
-    
-    from interfaces import (
-        MessageType, MethodName, MCPMessage, MCPRequest,
-        MCPResponse, MCPError, MCPNotification, TraceSession,
-        MCPServerConfig, RequestContext, AuthToken,
-        MCPServer, TraceManager, MCPQueryHandler
-    )
-    
-    # Verify enums
-    assert MessageType.REQUEST
-    assert MethodName.START_TRACE
-    
-    # Verify dataclasses  
-    config = MCPServerConfig()
-    assert config.port == 8765
-    assert config.max_connections == 10
-    
-    # Verify factory functions
-    from interfaces import (
-        create_mcp_server,
-        create_trace_manager,
-        create_mcp_query_handler,
-        create_authenticator
-    )
-    
-    assert callable(create_mcp_server)
-    assert callable(create_trace_manager)
-    
-    # Restore original path
-    sys.path = original_path
-
 if __name__ == "__main__":
     test_interfaces_compile()
     print("✅ Query Engine interfaces compile successfully!")
-    test_mcp_interfaces_compile()
-    print("✅ MCP Server interfaces compile successfully!")
-    print("\n✅ All Python interfaces compile successfully!")

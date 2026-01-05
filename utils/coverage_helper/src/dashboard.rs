@@ -95,7 +95,6 @@ fn parse_lcov_metrics(lcov_path: &Path) -> Result<HashMap<String, ComponentMetri
     component_data.insert("tracer".to_string(), ComponentMetrics::default());
     component_data.insert("tracer_backend".to_string(), ComponentMetrics::default());
     component_data.insert("query_engine".to_string(), ComponentMetrics::default());
-    component_data.insert("mcp_server".to_string(), ComponentMetrics::default());
     component_data.insert("total".to_string(), ComponentMetrics::default());
 
     for line in content.lines() {
@@ -393,8 +392,6 @@ fn detect_component(file_path: &str) -> String {
         "tracer".to_string()
     } else if file_path.contains("query_engine") {
         "query_engine".to_string()
-    } else if file_path.contains("mcp_server") {
-        "mcp_server".to_string()
     } else if file_path.contains("coverage_helper") {
         "coverage_helper".to_string()
     } else {
@@ -524,7 +521,7 @@ fn replace_placeholders(
     }
 
     // Component metrics
-    for component in &["tracer", "tracer_backend", "query_engine", "mcp_server"] {
+    for component in &["tracer", "tracer_backend", "query_engine"] {
         let prefix = component.to_uppercase().replace("_", "_");
         let comp_metrics = metrics.get(*component).cloned().unwrap_or_default();
         let status = get_status(comp_metrics.line_coverage);
@@ -534,7 +531,6 @@ fn replace_placeholders(
         let template_prefix = match *component {
             "tracer_backend" => "BACKEND",
             "query_engine" => "QUERY",
-            "mcp_server" => "MCP",
             _ => &prefix,
         };
 

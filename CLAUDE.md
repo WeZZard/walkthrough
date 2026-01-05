@@ -11,8 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **tracer** (Rust): Dual-lane flight recorder control plane
 - **tracer_backend** (C/C++): Native tracer backend.
-- **query_engine** (Python): Token-budget-aware analysis
-- **mcp_server** (Python): Model Context Protocol interface
+- **query_engine** (Rust): Token-budget-aware analysis
 - **ATF format**: Custom trace format
 
 These are ADA's innovation. Build carefully with focus on performance and correctness.
@@ -100,12 +99,9 @@ project-root/
 │               ├── CMakeLists.txt    # {module} unit tests build
 │               ├── *.c/cpp           # Tests files
 │               └── *.h               # Private headers for {module} integration tests
-├── query_engine/                 # Python query engine
-│   ├── Cargo.toml                # Rust manifest for Python binding
-│   └── pyproject.toml            # Python config (built via maturin)
-├── mcp_server/                   # Python MCP server
-│   ├── Cargo.toml                # Rust manifest (if using maturin)
-│   └── pyproject.toml            # Python config
+├── query_engine/                 # Rust query engine
+│   ├── Cargo.toml                # Rust manifest
+│   └── pyproject.toml            # Python config (for legacy tests)
 ├── utils/                        # Engineering efficiency scripts
 ├── third_parties/               # Frida SDK and dependencies
 └── target/                      # Build outputs (git-ignored)
@@ -187,8 +183,7 @@ Debugging steps:
    - Complete, compilable interface definitions in:
      - `tracer_backend/include/tracer_backend/interfaces/` (C/C++)
      - `tracer/src/lib.rs` (Rust traits)
-     - `query_engine/src/interfaces.py` (Python protocols)
-     - `mcp_server/src/interfaces.py` (Python protocols)
+     - `query_engine/src/` (Rust traits)
 
 2. **Skeleton Implementations**
    - Minimal skeletons that compile and link:

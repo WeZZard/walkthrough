@@ -61,11 +61,6 @@ def _module_without_orjson(module_name: str):
         if query_engine_src not in sys.path:
             sys.path.insert(0, query_engine_src)
 
-        # Remove any mcp_server paths that might interfere
-        mcp_paths = [p for p in sys.path if "mcp_server" in p]
-        for p in mcp_paths:
-            sys.path.remove(p)
-
         # Now import the module fresh
         module = importlib.import_module(module_name)
     try:

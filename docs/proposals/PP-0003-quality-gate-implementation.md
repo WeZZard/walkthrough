@@ -107,10 +107,10 @@ Once installed, quality gates are automatically enforced:
 - Raw data: `target/coverage/cpp-*.profraw`
 - Report: `target/coverage/cpp.lcov`
 
-### Python Components
+### Python Components (Legacy Tests)
 - Tool: `pytest-cov` + `coverage-lcov`
 - Command: `pytest --cov=[component] --cov-report=xml` then convert to LCOV
-- Components: `query_engine`, `mcp_server`
+- Components: `query_engine` (legacy Python tests only)
 - Raw data: `.coverage` and `python.xml`
 - Report: `target/coverage/python.lcov`
 

@@ -17,8 +17,7 @@ ADA provides a dual-lane flight recorder architecture for tracing AI agent execu
 
 - **tracer**: Rust control plane for trace management
 - **tracer_backend**: High-performance C/C++ data plane
-- **query_engine**: Python-based token-budget-aware analysis
-- **mcp_server**: Model Context Protocol interface
+- **query_engine**: Token-budget-aware analysis (Rust)
 
 ## Development Workflow
 

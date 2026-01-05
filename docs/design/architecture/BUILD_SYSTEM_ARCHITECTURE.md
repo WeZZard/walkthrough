@@ -49,32 +49,15 @@ project-root/
 │   └── docs/
 │       └── design/
 │
-├── query_engine/                # Python component (built with maturin)
-│   ├── Cargo.toml              # Rust crate manifest for Python binding
-│   ├── pyproject.toml          # Python project config
-│   ├── build.rs                # Build script (if needed)
+├── query_engine/                # Rust query engine
+│   ├── Cargo.toml              # Rust crate manifest
+│   ├── pyproject.toml          # Python config (for legacy tests)
 │   ├── src/
-│   │   └── lib.rs             # Rust bindings for Python
-│   ├── query_engine/          # Python sources
-│   │   ├── __init__.py
-│   │   ├── parser.py
-│   │   └── analyzer.py
+│   │   └── lib.rs             # Rust library
 │   ├── tests/
-│   │   ├── unit/              # pytest unit tests
+│   │   ├── unit/              # Unit tests
 │   │   ├── integration/       # Integration tests
 │   │   └── fixtures/          # Test data
-│   └── docs/
-│       └── design/
-│
-├── mcp_server/                 # Python MCP server
-│   ├── Cargo.toml             # Rust crate manifest (if using maturin)
-│   ├── pyproject.toml         # Python project config
-│   ├── mcp_server/            # Python sources
-│   │   ├── __init__.py
-│   │   └── server.py
-│   ├── tests/
-│   │   ├── unit/
-│   │   └── integration/
 │   └── docs/
 │       └── design/
 │
@@ -111,7 +94,6 @@ members = [
     "tracer",
     "tracer_backend",
     "query_engine",
-    "mcp_server",
     "utils/coverage_helper",
 ]
 resolver = "2"
@@ -160,7 +142,6 @@ coverage = []
 - Generates compile_commands.json
 
 #### query_engine/build.rs
-- Uses maturin for Python bindings
 - Handles coverage instrumentation
 - Links with native dependencies
 

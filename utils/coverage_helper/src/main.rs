@@ -306,11 +306,6 @@ fn collect_python_coverage(workspace: &Path, output_lcov: &Path) -> Result<()> {
         components_to_test.push(("query_engine", query_engine_dir));
     }
 
-    let mcp_server_dir = workspace.join("mcp_server");
-    if mcp_server_dir.exists() && mcp_server_dir.join("pyproject.toml").exists() {
-        components_to_test.push(("mcp_server", mcp_server_dir));
-    }
-
     if components_to_test.is_empty() {
         println!("  No Python components found");
         return Ok(());

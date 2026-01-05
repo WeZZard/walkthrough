@@ -64,12 +64,9 @@ project-root/
 │               ├── CMakeLists.txt    # {module} unit tests build
 │               ├── *.c/cpp           # Tests files
 │               └── *.h               # Private headers for {module} integration tests
-├── query_engine/                 # Python query engine
-│   ├── Cargo.toml                # Rust manifest for Python binding
-│   └── pyproject.toml            # Python config (built via maturin)
-├── mcp_server/                   # Python MCP server
-│   ├── Cargo.toml                # Rust manifest (if using maturin)
-│   └── pyproject.toml            # Python config
+├── query_engine/                 # Rust query engine
+│   ├── Cargo.toml                # Rust manifest
+│   └── pyproject.toml            # Python config (for legacy tests)
 ├── utils/                        # Engineering efficiency scripts
 ├── third_parties/               # Frida SDK and dependencies
 └── target/                      # Build outputs (git-ignored)
@@ -80,8 +77,7 @@ project-root/
 ### Core Components
 - **tracer**: Rust control plane for trace management
 - **tracer_backend**: High-performance C/C++ data plane with modular architecture
-- **query_engine**: Python-based token-budget-aware analysis with PyO3 Rust bindings
-- **mcp_server**: Model Context Protocol interface for AI agent integration
+- **query_engine**: Rust-based token-budget-aware analysis
 
 ### Build System
 - **Cargo workspace**: Orchestrates all builds from root Cargo.toml
@@ -113,12 +109,8 @@ cargo test --all
 ### Development Commands
 ```bash
 # Query engine local development
-maturin develop -m query_engine/Cargo.toml
-cd query_engine && pytest -q
-
-# MCP server development
-pip install -e mcp_server[dev]
-cd mcp_server && pytest -q
+cargo build -p query_engine
+cargo test -p query_engine
 
 # Coverage dashboard
 ./utils/run_coverage.sh
