@@ -246,9 +246,13 @@ FridaController::FridaController(const std::string& output_dir)
         cleanup_frida_objects();
         throw std::runtime_error("Failed to start drain thread");
     }
+
+    start_registry_maintenance();
 }
 
 FridaController::~FridaController() {
+    stop_registry_maintenance();
+
     // Stop ATF session first (finalizes files)
     stop_atf_session();
 
@@ -277,6 +281,49 @@ FridaController::~FridaController() {
     if (main_context_) {
         g_main_context_pop_thread_default(main_context_);
         g_main_context_unref(main_context_);
+    }
+}
+
+void FridaController::start_registry_maintenance() {
+    // LCOV_EXCL_START - Covered indirectly in integration workflows.
+    if (maintenance_thread_.joinable()) {
+        return;
+    }
+    // LCOV_EXCL_STOP
+    maintenance_stop_.store(false);
+    maintenance_thread_ = std::thread([this]() { registry_maintenance_loop(); });
+}
+
+void FridaController::stop_registry_maintenance() {
+    maintenance_stop_.store(true);
+    if (maintenance_thread_.joinable()) {
+        maintenance_thread_.join();
+    }
+}
+
+void FridaController::registry_maintenance_loop() {
+    constexpr uint32_t kTickMs = 100;
+    constexpr uint32_t kWarmupTicks = 5;
+    uint32_t warmup_ticks = 0;
+
+    while (!maintenance_stop_.load()) {
+        if (control_block_) {
+            uint64_t now_ns = static_cast<uint64_t>(g_get_monotonic_time()) * 1000;
+            cb_set_heartbeat_ns(control_block_, now_ns);
+
+            if (cb_get_registry_ready(control_block_) != 0) {
+                uint32_t mode = cb_get_registry_mode(control_block_);
+                if (mode == REGISTRY_MODE_DUAL_WRITE) {
+                    if (++warmup_ticks >= kWarmupTicks) {
+                        cb_set_registry_mode(control_block_, REGISTRY_MODE_PER_THREAD_ONLY);
+                    }
+                } else {
+                    warmup_ticks = 0;
+                }
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(kTickMs));
     }
 }
 

@@ -186,6 +186,7 @@ TEST_F(TimerWhiteboxTest, timer_whitebox__decrement_retry__then_records_retry) {
     for (int attempt = 0; attempt < 10 && observed_retries == 0; ++attempt) {
         timer_test_control_reset_decrement_metrics();
         timer_test_control_fail_clock_gettime(kThreadCount, EIO);
+        timer_test_control_force_decrement_retry();
 
         std::atomic<int> ready{0};
         std::atomic<bool> go{false};

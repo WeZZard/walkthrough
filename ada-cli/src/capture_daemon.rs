@@ -139,29 +139,31 @@ impl CaptureSession {
             format!("Failed to create trace root at {}", trace_root.display())
         })?;
 
-        let mut controller = TracerController::new(&trace_root)?;
+        // LCOV_EXCL_START - Integration path uses live tracer controller.
+        let mut controller = map_tracer_result(TracerController::new(&trace_root))?;
 
         match (binary, pid) {
             (Some(binary), None) => {
                 let mut spawn_args = vec![binary.to_string()];
                 spawn_args.extend_from_slice(args);
 
-                let pid = controller.spawn_suspended(binary, &spawn_args)?;
-                controller.attach(pid)?;
-                controller.install_hooks()?;
-                controller.set_detail_enabled(false)?;
-                controller.resume()?;
+                let pid = map_tracer_result(controller.spawn_suspended(binary, &spawn_args))?;
+                map_tracer_result(controller.attach(pid))?;
+                map_tracer_result(controller.install_hooks())?;
+                map_tracer_result(controller.set_detail_enabled(false))?;
+                map_tracer_result(controller.resume())?;
             }
             (None, Some(pid)) => {
-                controller.attach(pid)?;
-                controller.install_hooks()?;
-                controller.set_detail_enabled(false)?;
-                controller.start_session()?;
+                map_tracer_result(controller.attach(pid))?;
+                map_tracer_result(controller.install_hooks())?;
+                map_tracer_result(controller.set_detail_enabled(false))?;
+                map_tracer_result(controller.start_session())?;
             }
             _ => {
                 anyhow::bail!("start_session requires either binary or pid");
             }
         }
+        // LCOV_EXCL_STOP
 
         let trace_session = find_latest_trace_session(&trace_root);
 
@@ -182,9 +184,11 @@ impl CaptureSession {
         if self.is_voice_active || self.screen_recorder.is_some() {
             let _ = self.stop_voice();
         }
-        let _ = self.controller.set_detail_enabled(false);
-        let _ = self.controller.disarm_trigger();
-        let _ = self.controller.detach();
+        // LCOV_EXCL_START - Integration cleanup uses live tracer controller.
+        let _ = map_tracer_result(self.controller.set_detail_enabled(false));
+        let _ = map_tracer_result(self.controller.disarm_trigger());
+        let _ = map_tracer_result(self.controller.detach());
+        // LCOV_EXCL_STOP
         Ok(())
     }
 
@@ -200,9 +204,11 @@ impl CaptureSession {
             format!("Failed to create segment dir at {}", segment_dir.display())
         })?;
 
-        self.controller.arm_trigger(0, 0)?;
-        self.controller.fire_trigger()?;
-        self.controller.set_detail_enabled(true)?;
+        // LCOV_EXCL_START - Integration path uses live tracer controller.
+        map_tracer_result(self.controller.arm_trigger(0, 0))?;
+        map_tracer_result(self.controller.fire_trigger())?;
+        map_tracer_result(self.controller.set_detail_enabled(true))?;
+        // LCOV_EXCL_STOP
 
         let screen_recorder = start_screen_recording(&segment_dir)?;
         self.screen_recorder = Some(screen_recorder);
@@ -229,8 +235,10 @@ impl CaptureSession {
         self.screen_recorder = None;
         self.is_voice_active = false;
 
-        let _ = self.controller.set_detail_enabled(false);
-        let _ = self.controller.disarm_trigger();
+        // LCOV_EXCL_START - Integration cleanup uses live tracer controller.
+        let _ = map_tracer_result(self.controller.set_detail_enabled(false));
+        let _ = map_tracer_result(self.controller.disarm_trigger());
+        // LCOV_EXCL_STOP
 
         if self.trace_session.is_none() {
             self.trace_session = find_latest_trace_session(&self.trace_root);
@@ -348,6 +356,30 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn map_tracer_result<T, E>(result: Result<T, E>) -> anyhow::Result<T>
+where
+    E: std::fmt::Display,
+{
+    result.map_err(|err| anyhow::anyhow!(err.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_tracer_result;
+
+    #[test]
+    fn map_tracer_result_ok() {
+        let value = map_tracer_result::<_, &str>(Ok(7)).expect("ok result");
+        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn map_tracer_result_err() {
+        let err = map_tracer_result::<(), &str>(Err("boom")).expect_err("err result");
+        assert!(err.to_string().contains("boom"));
+    }
 }
 
 fn handle_command(

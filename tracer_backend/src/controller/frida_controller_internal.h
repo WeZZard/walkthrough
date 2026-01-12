@@ -5,6 +5,7 @@
 #include <atomic>
 #include <string>
 #include <cstdint>
+#include <thread>
 
 extern "C" {
 #include <frida-core.h>
@@ -106,6 +107,11 @@ private:
     // ATF session management
     bool start_atf_session();
     void stop_atf_session();
+
+    // Controller maintenance
+    void start_registry_maintenance();
+    void stop_registry_maintenance();
+    void registry_maintenance_loop();
     
     // Static callbacks for Frida signals
     static void on_detached_callback(FridaSession* session, 
@@ -157,6 +163,10 @@ private:
     // Event loop
     GMainLoop* main_loop_{nullptr};
     GMainContext* main_context_{nullptr};
+
+    // Registry heartbeat/maintenance thread
+    std::thread maintenance_thread_;
+    std::atomic<bool> maintenance_stop_{false};
 
     // Startup timeout configuration (M1_E6_I1)
     StartupTimeoutConfig startup_cfg_{};

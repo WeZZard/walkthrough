@@ -52,12 +52,15 @@ cd tracer-backend
 # Build everything via Cargo (this runs CMake internally via build.rs)
 cargo build --release
 
+# Include the tracer CLI (optional)
+cargo build --release --features tracer-cli
+
 # The build will automatically generate compile_commands.json for IDE support
 # Location: target/debug/build/tracer-backend-*/out/build/compile_commands.json
 # A symlink is created at: target/compile_commands.json
 
 # Run the tracer
-cargo run --bin tracer -- spawn ./target/debug/test_cli
+cargo run --features tracer-cli --bin tracer -- spawn ./target/debug/test_cli
 ```
 
 ### IDE Integration
@@ -78,7 +81,7 @@ This will build:
 - `libtracer_backend` - Rust library wrapping the native components
 - `libtracer_controller.a` - Controller library (built via CMake in build.rs)
 - `libfrida_agent.dylib` - Agent library (built via CMake in build.rs)
-- `tracer` - Main executable (Rust binary)
+- `tracer` - Main executable (Rust binary, enable with `--features tracer-cli`)
 - `test_cli` - CLI test program (built via CMake)
 - `test_runloop` - RunLoop test program (built via CMake)
 
@@ -88,7 +91,7 @@ This will build:
 
 ```bash
 # Using cargo run
-cargo run --bin tracer -- spawn ./target/debug/test_cli --wait
+cargo run --features tracer-cli --bin tracer -- spawn ./target/debug/test_cli --wait
 
 # Or using the built binary
 ./target/release/tracer spawn ./target/debug/test_cli --wait
@@ -97,13 +100,13 @@ cargo run --bin tracer -- spawn ./target/debug/test_cli --wait
 ### Trace a RunLoop-based program
 
 ```bash
-cargo run --bin tracer -- spawn ./target/debug/test_runloop
+cargo run --features tracer-cli --bin tracer -- spawn ./target/debug/test_runloop
 ```
 
 ### Attach to existing process
 
 ```bash
-cargo run --bin tracer -- attach <PID>
+cargo run --features tracer-cli --bin tracer -- attach <PID>
 ```
 
 ### Options

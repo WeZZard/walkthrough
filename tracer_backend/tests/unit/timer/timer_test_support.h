@@ -25,6 +25,7 @@ void timer_test_control_reset_clock_queue(void);
 void timer_test_control_enqueue_clock_time(struct timespec value);
 void timer_test_control_reset_decrement_metrics(void);
 int timer_test_control_get_decrement_retry_count(void);
+void timer_test_control_force_decrement_retry(void);
 void timer_test_control_consume_clock_failure(void);
 
 void timer_test_control_fail_nanosleep(int count, int error_code, bool populate_remaining);

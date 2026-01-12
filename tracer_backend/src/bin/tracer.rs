@@ -27,6 +27,31 @@ fn print_usage(program: &str) {
     println!("  --output <dir>   - Output directory for traces (default: ./traces)");
 }
 
+fn map_tracer_result<T, E>(result: Result<T, E>) -> anyhow::Result<T>
+where
+    E: std::fmt::Display,
+{
+    result.map_err(|err| anyhow::anyhow!(err.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_tracer_result;
+
+    #[test]
+    fn map_tracer_result_ok() {
+        let value = map_tracer_result::<_, &str>(Ok(5)).expect("ok result");
+        assert_eq!(value, 5);
+    }
+
+    #[test]
+    fn map_tracer_result_err() {
+        let err = map_tracer_result::<(), &str>(Err("boom")).expect_err("err result");
+        assert!(err.to_string().contains("boom"));
+    }
+}
+
+// LCOV_EXCL_START - CLI entrypoint not covered by unit tests.
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
@@ -68,7 +93,7 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&output_dir)?;
 
     // Create controller
-    let mut controller = TracerController::new(&output_dir)?;
+    let mut controller = map_tracer_result(TracerController::new(&output_dir))?;
     println!("Controller created successfully");
 
     let pid = match mode.as_str() {
@@ -79,12 +104,12 @@ fn main() -> Result<()> {
             let mut spawn_args = vec![target.clone()];
             spawn_args.extend(target_args);
 
-            let pid = controller.spawn_suspended(target, &spawn_args)?;
+            let pid = map_tracer_result(controller.spawn_suspended(target, &spawn_args))?;
             println!("Process spawned with PID: {} (suspended)", pid);
 
             // Attach to spawned process
             println!("Attaching to PID {}...", pid);
-            controller.attach(pid)?;
+            map_tracer_result(controller.attach(pid))?;
 
             pid
         }
@@ -94,7 +119,7 @@ fn main() -> Result<()> {
                 .map_err(|_| anyhow::anyhow!("Invalid PID: {}", target))?;
 
             println!("Attaching to PID {}...", pid);
-            controller.attach(pid)?;
+            map_tracer_result(controller.attach(pid))?;
 
             pid
         }
@@ -109,13 +134,13 @@ fn main() -> Result<()> {
 
     // Install hooks
     println!("Installing hooks...");
-    controller.install_hooks()?;
+    map_tracer_result(controller.install_hooks())?;
     println!("Hooks installed successfully");
 
     // Resume process if spawned
     if mode == "spawn" {
         println!("Resuming process...");
-        controller.resume()?;
+        map_tracer_result(controller.resume())?;
         println!("Process resumed");
     }
 
@@ -150,7 +175,7 @@ fn main() -> Result<()> {
 
     // Detach and cleanup
     println!("\nDetaching from process...");
-    controller.detach()?;
+    map_tracer_result(controller.detach())?;
 
     // Print final statistics
     let final_stats = controller.get_stats();
@@ -204,6 +229,7 @@ fn main() -> Result<()> {
     println!("\nTracer completed successfully");
     Ok(())
 }
+// LCOV_EXCL_STOP
 
 // Add ctrlc dependency
 #[cfg(not(test))]

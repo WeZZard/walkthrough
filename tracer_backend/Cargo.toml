@@ -26,12 +26,14 @@ crate-type = ["lib", "staticlib", "cdylib"]
 [[bin]]
 name = "tracer"
 path = "src/bin/tracer.rs"
+required-features = ["tracer-cli"]
 
 [features]
 default = []
 integration-tests = []
 coverage = []  # Enable coverage instrumentation for C/C++ code
 bindgen = ["dep:bindgen"]
+tracer-cli = []
 
 [dev-dependencies]
 tempfile = "3.8"

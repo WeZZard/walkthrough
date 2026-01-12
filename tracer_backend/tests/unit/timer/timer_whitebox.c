@@ -27,9 +27,13 @@ static atomic_int g_pthread_create_error = ATOMIC_VAR_INIT(0);
 static atomic_int g_pthread_join_count = ATOMIC_VAR_INIT(0);
 static atomic_bool g_pthread_create_run_inline = ATOMIC_VAR_INIT(false);
 static atomic_int g_decrement_retry_count = ATOMIC_VAR_INIT(0);
+static atomic_bool g_force_decrement_retry = ATOMIC_VAR_INIT(false);
 
 static void timer_test_decrement_if_positive(atomic_int* value) {
     int current = atomic_load_explicit(value, memory_order_acquire);
+    if (atomic_exchange_explicit(&g_force_decrement_retry, false, memory_order_acq_rel)) {
+        current += 1;
+    }
     while (current > 0 && !atomic_compare_exchange_weak_explicit(
                value, &current, current - 1, memory_order_acq_rel, memory_order_acquire)) {
         // Retry until the decrement succeeds or the value changes.
@@ -187,10 +191,15 @@ void timer_test_control_fail_clock_gettime(int count, int error_code) {
 
 void timer_test_control_reset_decrement_metrics(void) {
     atomic_store_explicit(&g_decrement_retry_count, 0, memory_order_release);
+    atomic_store_explicit(&g_force_decrement_retry, false, memory_order_release);
 }
 
 int timer_test_control_get_decrement_retry_count(void) {
     return atomic_load_explicit(&g_decrement_retry_count, memory_order_acquire);
+}
+
+void timer_test_control_force_decrement_retry(void) {
+    atomic_store_explicit(&g_force_decrement_retry, true, memory_order_release);
 }
 
 void timer_test_control_consume_clock_failure(void) {

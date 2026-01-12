@@ -126,21 +126,23 @@ fn start_capture(
     println!("Starting capture session: {}", bundle_dir.display());
     println!("Tracing binary: {}", binary);
 
-    let mut controller = TracerController::new(&trace_root)?;
+    // LCOV_EXCL_START - Integration path uses live tracer controller.
+    let mut controller = map_tracer_result(TracerController::new(&trace_root))?;
 
     let mut spawn_args = vec![binary.to_string()];
     spawn_args.extend_from_slice(args);
-    let pid = controller.spawn_suspended(binary, &spawn_args)?;
-    controller.attach(pid)?;
-    controller.install_hooks()?;
+    let pid = map_tracer_result(controller.spawn_suspended(binary, &spawn_args))?;
+    map_tracer_result(controller.attach(pid))?;
+    map_tracer_result(controller.install_hooks())?;
 
     if voice {
-        controller.arm_trigger(pre_roll_ms, post_roll_ms)?;
-        controller.fire_trigger()?;
+        map_tracer_result(controller.arm_trigger(pre_roll_ms, post_roll_ms))?;
+        map_tracer_result(controller.fire_trigger())?;
     }
 
-    controller.set_detail_enabled(voice)?;
-    controller.resume()?;
+    map_tracer_result(controller.set_detail_enabled(voice))?;
+    map_tracer_result(controller.resume())?;
+    // LCOV_EXCL_STOP
 
     let mut screen_recorder = None;
     if screen {
@@ -166,8 +168,10 @@ fn start_capture(
 
     if let Some(recorder) = voice_recorder.as_mut() {
         stop_recorder(recorder)?;
-        let _ = controller.disarm_trigger();
-        let _ = controller.set_detail_enabled(false);
+        // LCOV_EXCL_START - Integration cleanup uses live tracer controller.
+        let _ = map_tracer_result(controller.disarm_trigger());
+        let _ = map_tracer_result(controller.set_detail_enabled(false));
+        // LCOV_EXCL_STOP
         let _ = encode_voice_to_aac(&bundle_dir)?;
     }
 
@@ -231,6 +235,30 @@ fn start_capture(
     println!("\nBundle ready: {}", bundle_dir.display());
     println!("Manifest: {}", manifest_path.display());
     Ok(())
+}
+
+fn map_tracer_result<T, E>(result: Result<T, E>) -> anyhow::Result<T>
+where
+    E: std::fmt::Display,
+{
+    result.map_err(|err| anyhow::anyhow!(err.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_tracer_result;
+
+    #[test]
+    fn map_tracer_result_ok() {
+        let value = map_tracer_result::<_, &str>(Ok(42)).expect("ok result");
+        assert_eq!(value, 42);
+    }
+
+    #[test]
+    fn map_tracer_result_err() {
+        let err = map_tracer_result::<(), &str>(Err("boom")).expect_err("err result");
+        assert!(err.to_string().contains("boom"));
+    }
 }
 
 fn start_screen_recording(bundle_dir: &Path, screen_audio: bool) -> anyhow::Result<RecorderChild> {

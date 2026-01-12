@@ -4,6 +4,7 @@
 
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
     let skip_symbol_resolver = matches!(
@@ -40,11 +41,31 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:warning=Found symbol_resolver at: {}", lib_path.display());
     } else {
-        panic!(
-            "libsymbol_resolver.a not found under {}; \
-             build tracer_backend first (ada-cli has a build-dependency on it)",
-            build_dir.display()
-        );
+        println!("cargo:warning=symbol_resolver not found, attempting to build tracer_backend...");
+
+        let mut cmd = Command::new("cargo");
+        cmd.arg("build").arg("-p").arg("tracer_backend");
+        if profile == "release" {
+            cmd.arg("--release");
+        }
+        let status = cmd
+            .current_dir(&workspace_root)
+            .status()
+            .expect("Failed to invoke cargo build -p tracer_backend");
+        if !status.success() {
+            panic!("Failed to build tracer_backend for symbol_resolver");
+        }
+
+        if let Some(lib_path) = find_library(&build_dir, "libsymbol_resolver.a") {
+            let lib_dir = lib_path.parent().unwrap();
+            println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        } else {
+            panic!(
+                "libsymbol_resolver.a not found under {}; \
+                 build tracer_backend first (ada-cli has a build-dependency on it)",
+                build_dir.display()
+            );
+        }
     }
 
     // Link against symbol_resolver

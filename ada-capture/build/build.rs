@@ -46,7 +46,8 @@ fn main() {
         }
     }
 
-    println!("cargo:rerun-if-changed=ada-capture/macos/AdaCapture");
+    let rerun_path = project_root.join("ada-capture/macos/AdaCapture");
+    println!("cargo:rerun-if-changed={}", rerun_path.display());
 }
 
 fn copy_daemon(project_root: &Path, derived_data: &Path, configuration: &str) {

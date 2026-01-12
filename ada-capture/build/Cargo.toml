@@ -1,5 +1,5 @@
 [package]
-name = "ada-gui"
+name = "ada-capture-build"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -15,4 +15,3 @@ path = "src/lib.rs"
 [dependencies]
 
 [build-dependencies]
-
