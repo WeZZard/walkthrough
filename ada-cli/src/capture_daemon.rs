@@ -150,12 +150,16 @@ impl CaptureSession {
                 let pid = map_tracer_result(controller.spawn_suspended(binary, &spawn_args))?;
                 map_tracer_result(controller.attach(pid))?;
                 map_tracer_result(controller.install_hooks())?;
+                map_tracer_result(controller.arm_trigger(0, 0))?;
+                map_tracer_result(controller.fire_trigger())?;
                 map_tracer_result(controller.set_detail_enabled(false))?;
                 map_tracer_result(controller.resume())?;
             }
             (None, Some(pid)) => {
                 map_tracer_result(controller.attach(pid))?;
                 map_tracer_result(controller.install_hooks())?;
+                map_tracer_result(controller.arm_trigger(0, 0))?;
+                map_tracer_result(controller.fire_trigger())?;
                 map_tracer_result(controller.set_detail_enabled(false))?;
                 map_tracer_result(controller.start_session())?;
             }
