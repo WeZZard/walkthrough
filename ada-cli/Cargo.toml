@@ -40,6 +40,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Utilities
 which = "6.0"
 ctrlc = "3.4"
+memmap2 = "0.9"
 
 # Tracer control
 tracer_backend = { path = "../tracer_backend" }
@@ -48,6 +49,9 @@ tracer_backend = { path = "../tracer_backend" }
 # For linking to symbol_resolver C library
 cc = "1.0"
 tracer_backend = { path = "../tracer_backend" }
+
+[dev-dependencies]
+tempfile = "3.10"
 
 [features]
 default = []

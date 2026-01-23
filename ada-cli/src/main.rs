@@ -8,10 +8,11 @@
 //! - `ada symbols` - Symbol resolution and dSYM management
 //! - `ada query` - Query trace data
 
+mod capture;
 mod ffi;
+mod query;
 mod symbols;
 mod trace;
-mod capture;
 
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{fmt, EnvFilter};
@@ -46,14 +47,29 @@ enum Commands {
     #[command(subcommand)]
     Capture(capture::CaptureCommands),
 
-    /// Query trace data (coming soon)
+    // LCOV_EXCL_START - Struct field definitions
+    /// Query trace data
+    ///
+    /// Examples:
+    ///   ada query /path/to/session summary
+    ///   ada query /path/to/session list functions
+    ///   ada query /path/to/session events limit:100
+    ///   ada query /path/to/session events thread:0 limit:50
+    ///   ada query /path/to/session calls to main
+    ///   ada query /path/to/session --format json summary
     Query {
         /// Path to session directory
         session: String,
 
-        /// Query string (natural language or filter expression)
-        query: String,
+        /// Query (summary, list functions, list threads, events, calls to <name>)
+        #[arg(trailing_var_arg = true, required = true)]
+        query: Vec<String>,
+
+        /// Output format (text or json)
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
+    // LCOV_EXCL_STOP
 }
 
 fn main() -> anyhow::Result<()> {
@@ -74,11 +90,21 @@ fn main() -> anyhow::Result<()> {
         Commands::Trace(cmd) => trace::run(cmd),
         Commands::Symbols(cmd) => symbols::run(cmd),
         Commands::Capture(cmd) => capture::run(cmd),
-        Commands::Query { session, query } => {
-            println!("Query feature coming soon!");
-            println!("Session: {}", session);
-            println!("Query: {}", query);
-            Ok(())
+        // LCOV_EXCL_START - CLI entry point requires real session files
+        Commands::Query {
+            session,
+            query: query_words,
+            format,
+        } => {
+            use std::path::PathBuf;
+
+            let query_str = query_words.join(" ");
+            let output_format: query::OutputFormat = format
+                .parse()
+                .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+
+            query::run(&PathBuf::from(session), &query_str, output_format)
         }
+        // LCOV_EXCL_STOP
     }
 }
