@@ -1,10 +1,12 @@
 //! Output formatters for query results
 //!
-//! Supports text and JSON output formats.
+//! Supports text, JSON, and line output formats.
+
+use std::collections::HashMap;
 
 use serde::Serialize;
 
-use super::events::Event;
+use super::events::{Event, EventKind};
 use super::session::{Session, SessionSummary, ThreadInfo};
 
 /// Output format
@@ -13,6 +15,104 @@ pub enum OutputFormat {
     #[default]
     Text,
     Json,
+    /// Line format with computed path indices, human-readable timestamps, and raw nanoseconds
+    Line,
+}
+
+/// Event enriched with computed path index
+#[derive(Debug, Clone)]
+pub struct EnrichedEvent {
+    pub event: Event,
+    /// Hierarchical path in call tree (e.g., "0.0.1")
+    pub path_index: String,
+    /// Seconds from first event (human-readable)
+    pub relative_time_secs: f64,
+}
+
+/// Per-thread call stack tracker for computing path indices
+struct PathTracker {
+    /// thread_id -> stack of sibling indices at each depth
+    stacks: HashMap<u32, Vec<usize>>,
+    /// thread_id -> (depth -> next sibling index)
+    sibling_counters: HashMap<u32, HashMap<u32, usize>>,
+}
+
+impl PathTracker {
+    fn new() -> Self {
+        PathTracker {
+            stacks: HashMap::new(),
+            sibling_counters: HashMap::new(),
+        }
+    }
+
+    /// Process an event and return its path index
+    fn process_event(&mut self, event: &Event) -> String {
+        let thread_id = event.thread_id;
+        let depth = event.depth;
+
+        match event.kind {
+            EventKind::Call => {
+                // Get or create structures for this thread
+                let stack = self.stacks.entry(thread_id).or_insert_with(Vec::new);
+                let counters = self.sibling_counters.entry(thread_id).or_default();
+
+                // Get sibling index at current depth, increment counter
+                let sibling_idx = *counters.get(&depth).unwrap_or(&0);
+                counters.insert(depth, sibling_idx + 1);
+
+                // Push sibling index onto stack
+                stack.push(sibling_idx);
+
+                // Reset child sibling counter (depth + 1)
+                counters.insert(depth + 1, 0);
+
+                // Build path: thread.parent_siblings...sibling
+                let mut path_parts: Vec<String> = vec![thread_id.to_string()];
+                for &idx in stack.iter() {
+                    path_parts.push(idx.to_string());
+                }
+                path_parts.join(".")
+            }
+            EventKind::Return | EventKind::Exception => {
+                // Get stack for this thread
+                let stack = self.stacks.entry(thread_id).or_insert_with(Vec::new);
+
+                if stack.is_empty() {
+                    // Orphan return - just use thread_id
+                    return thread_id.to_string();
+                }
+
+                // Build path from current stack
+                let mut path_parts: Vec<String> = vec![thread_id.to_string()];
+                for &idx in stack.iter() {
+                    path_parts.push(idx.to_string());
+                }
+                let path = path_parts.join(".");
+
+                // Pop from stack
+                stack.pop();
+
+                path
+            }
+            EventKind::Unknown(_) => {
+                // Unknown event kind - just use thread_id
+                thread_id.to_string()
+            }
+        }
+    }
+}
+
+/// Compute enriched events with path indices and relative timestamps
+pub fn compute_enriched_events(events: &[Event], start_time_ns: u64) -> Vec<EnrichedEvent> {
+    let mut tracker = PathTracker::new();
+    events
+        .iter()
+        .map(|event| EnrichedEvent {
+            event: event.clone(),
+            path_index: tracker.process_event(event),
+            relative_time_secs: (event.timestamp_ns.saturating_sub(start_time_ns)) as f64 / 1e9,
+        })
+        .collect()
 }
 
 impl std::str::FromStr for OutputFormat {
@@ -22,7 +122,11 @@ impl std::str::FromStr for OutputFormat {
         match s.to_lowercase().as_str() {
             "text" | "txt" => Ok(OutputFormat::Text),
             "json" => Ok(OutputFormat::Json),
-            _ => Err(format!("Unknown format '{}'. Use 'text' or 'json'", s)),
+            "line" => Ok(OutputFormat::Line),
+            _ => Err(format!(
+                "Unknown format '{}'. Use 'text', 'json', or 'line'",
+                s
+            )),
         }
     }
 }
@@ -30,7 +134,7 @@ impl std::str::FromStr for OutputFormat {
 /// Format session summary
 pub fn format_summary(summary: &SessionSummary, format: OutputFormat) -> String {
     match format {
-        OutputFormat::Text => format_summary_text(summary),
+        OutputFormat::Text | OutputFormat::Line => format_summary_text(summary),
         OutputFormat::Json => format_summary_json(summary),
     }
 }
@@ -115,7 +219,7 @@ fn format_summary_json(summary: &SessionSummary) -> String {
 // LCOV_EXCL_START - Integration tested via CLI
 pub fn format_functions(symbols: &[&str], format: OutputFormat) -> String {
     match format {
-        OutputFormat::Text => format_functions_text(symbols),
+        OutputFormat::Text | OutputFormat::Line => format_functions_text(symbols),
         OutputFormat::Json => format_functions_json(symbols),
     }
 }
@@ -148,7 +252,7 @@ fn format_functions_json(symbols: &[&str]) -> String {
 /// Format thread list
 pub fn format_threads(threads: &[&ThreadInfo], format: OutputFormat) -> String {
     match format {
-        OutputFormat::Text => format_threads_text(threads),
+        OutputFormat::Text | OutputFormat::Line => format_threads_text(threads),
         OutputFormat::Json => format_threads_json(threads),
     }
 }
@@ -197,7 +301,43 @@ pub fn format_events(events: &[Event], session: &Session, format: OutputFormat) 
     match format {
         OutputFormat::Text => format_events_text(events, session),
         OutputFormat::Json => format_events_json(events, session),
+        OutputFormat::Line => format_events_line(events, session),
     }
+}
+
+/// Format events in line format with path indices and timestamps
+///
+/// Output format:
+/// ```text
+/// ns=949066051830500 | T=0.000000s | thread:0 | path:0.0 | depth:1 | CALL main()
+/// ```
+fn format_events_line(events: &[Event], session: &Session) -> String {
+    if events.is_empty() {
+        return "(no events)\n".to_string();
+    }
+
+    let start = events.first().map(|e| e.timestamp_ns).unwrap_or(0);
+    let enriched = compute_enriched_events(events, start);
+
+    let mut output = String::new();
+    for e in &enriched {
+        let function_name = session
+            .resolve_symbol(e.event.function_id)
+            .unwrap_or("<unknown>");
+
+        output.push_str(&format!(
+            "ns={} | T={:.6}s | thread:{} | path:{} | depth:{} | {} {}()\n",
+            e.event.timestamp_ns,
+            e.relative_time_secs,
+            e.event.thread_id,
+            e.path_index,
+            e.event.depth,
+            e.event.kind,
+            function_name
+        ));
+    }
+
+    output
 }
 
 fn format_events_text(events: &[Event], session: &Session) -> String {
@@ -361,5 +501,224 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed["session_name"], "test_session");
         assert_eq!(parsed["total_events"], 50);
+    }
+
+    #[test]
+    fn test_output_format__parse_line__then_line() {
+        let format: OutputFormat = "line".parse().unwrap();
+        assert_eq!(format, OutputFormat::Line);
+    }
+
+    #[test]
+    fn test_path_tracker__single_call__then_thread_sibling_path() {
+        let mut tracker = PathTracker::new();
+        let event = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 1,
+        };
+
+        let path = tracker.process_event(&event);
+        assert_eq!(path, "0.0"); // thread 0, first call at depth 1
+    }
+
+    #[test]
+    fn test_path_tracker__nested_calls__then_hierarchical_path() {
+        let mut tracker = PathTracker::new();
+
+        // First call: main()
+        let call1 = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&call1), "0.0");
+
+        // Nested call: login()
+        let call2 = Event {
+            timestamp_ns: 2000,
+            function_id: 0x200,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 2,
+        };
+        assert_eq!(tracker.process_event(&call2), "0.0.0");
+
+        // Return from login()
+        let ret = Event {
+            timestamp_ns: 3000,
+            function_id: 0x200,
+            thread_id: 0,
+            kind: EventKind::Return,
+            depth: 2,
+        };
+        assert_eq!(tracker.process_event(&ret), "0.0.0");
+    }
+
+    #[test]
+    fn test_path_tracker__sibling_calls__then_incremented_index() {
+        let mut tracker = PathTracker::new();
+
+        // First call: main()
+        let call1 = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&call1), "0.0");
+
+        // First nested call: login()
+        let call2 = Event {
+            timestamp_ns: 2000,
+            function_id: 0x200,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 2,
+        };
+        assert_eq!(tracker.process_event(&call2), "0.0.0");
+
+        // Return from login()
+        let ret2 = Event {
+            timestamp_ns: 3000,
+            function_id: 0x200,
+            thread_id: 0,
+            kind: EventKind::Return,
+            depth: 2,
+        };
+        assert_eq!(tracker.process_event(&ret2), "0.0.0");
+
+        // Second sibling call: logout()
+        let call3 = Event {
+            timestamp_ns: 4000,
+            function_id: 0x300,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 2,
+        };
+        assert_eq!(tracker.process_event(&call3), "0.0.1"); // sibling incremented
+    }
+
+    #[test]
+    fn test_path_tracker__multiple_threads__then_independent_paths() {
+        let mut tracker = PathTracker::new();
+
+        // Thread 0: first call
+        let call0 = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&call0), "0.0");
+
+        // Thread 1: first call (independent)
+        let call1 = Event {
+            timestamp_ns: 1500,
+            function_id: 0x200,
+            thread_id: 1,
+            kind: EventKind::Call,
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&call1), "1.0");
+
+        // Thread 0: second call
+        let call0b = Event {
+            timestamp_ns: 2000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 2,
+        };
+        assert_eq!(tracker.process_event(&call0b), "0.0.0");
+    }
+
+    #[test]
+    fn test_path_tracker__orphan_return__then_fallback_path() {
+        let mut tracker = PathTracker::new();
+
+        // Return without matching call (orphan)
+        let orphan_ret = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 5,
+            kind: EventKind::Return,
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&orphan_ret), "5"); // just thread_id
+    }
+
+    #[test]
+    fn test_compute_enriched_events__timestamps__then_relative_seconds() {
+        let events = vec![
+            Event {
+                timestamp_ns: 1_000_000_000, // 1 second
+                function_id: 0x100,
+                thread_id: 0,
+                kind: EventKind::Call,
+                depth: 1,
+            },
+            Event {
+                timestamp_ns: 1_000_021_000, // 1.000021 seconds
+                function_id: 0x200,
+                thread_id: 0,
+                kind: EventKind::Call,
+                depth: 2,
+            },
+        ];
+
+        let enriched = compute_enriched_events(&events, 1_000_000_000);
+
+        assert_eq!(enriched.len(), 2);
+        assert!((enriched[0].relative_time_secs - 0.0).abs() < 1e-9);
+        assert!((enriched[1].relative_time_secs - 0.000021).abs() < 1e-9);
+        assert_eq!(enriched[0].path_index, "0.0");
+        assert_eq!(enriched[1].path_index, "0.0.0");
+    }
+
+    #[test]
+    fn test_path_tracker__exception__then_same_as_return() {
+        let mut tracker = PathTracker::new();
+
+        // Call
+        let call = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Call,
+            depth: 1,
+        };
+        tracker.process_event(&call);
+
+        // Exception (should behave like return)
+        let exc = Event {
+            timestamp_ns: 2000,
+            function_id: 0x100,
+            thread_id: 0,
+            kind: EventKind::Exception,
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&exc), "0.0");
+    }
+
+    #[test]
+    fn test_path_tracker__unknown_event_kind__then_thread_id_only() {
+        let mut tracker = PathTracker::new();
+
+        // Unknown event kind (rare edge case)
+        let unknown = Event {
+            timestamp_ns: 1000,
+            function_id: 0x100,
+            thread_id: 7,
+            kind: EventKind::Unknown(99),
+            depth: 1,
+        };
+        assert_eq!(tracker.process_event(&unknown), "7"); // just thread_id
     }
 }

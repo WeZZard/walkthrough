@@ -98,7 +98,7 @@ pub enum QueryCommands {
         #[arg(short, long, default_value = "0")]
         offset: usize,
 
-        /// Output format (text or json)
+        /// Output format (text, json, or line)
         #[arg(short = 'f', long, default_value = "text")]
         format: String,
     },
@@ -126,7 +126,7 @@ pub enum QueryCommands {
         #[arg(short, long, default_value = "1000")]
         limit: usize,
 
-        /// Output format (text or json)
+        /// Output format (text, json, or line)
         #[arg(short = 'f', long, default_value = "text")]
         format: String,
     },
