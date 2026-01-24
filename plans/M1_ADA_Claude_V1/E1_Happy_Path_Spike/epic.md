@@ -236,10 +236,67 @@ Open Claude (web or API) and provide:
 
 ## Blockers for Next Steps
 
-1. **Fix query bundle path resolution** - Can't proceed with clean skill integration
+1. ~~**Fix query bundle path resolution**~~ - ✅ FIXED (2026-01-24)
 2. **Install Whisper** - Required for voice transcription
 3. **Test Claude integration** - Manual test with captured data
 
 ## Status
 
-**In Progress** - Spike complete, findings documented, blockers identified
+**Complete** - Spike complete, query fixes verified
+
+---
+
+## Spike Rerun Results (2026-01-24, Post-Fix)
+
+### Fixes Verified
+
+Both blockers from the original spike have been resolved:
+
+| Issue | Before | After |
+|-------|--------|-------|
+| **Bundle path resolution** | Had to use `trace/session_*/pid_*` path | Direct bundle path works ✅ |
+| **Flag order matters** | `-f json` had to come before path | Flags work in any position ✅ |
+
+### Implementation Details
+
+Commit `a78b557`: `refactor(ada-cli): redesign query with subcommands and bundle-aware architecture`
+
+Changes:
+- Replaced variadic argument parsing with clap subcommands
+- Added `Bundle` struct to parse `.adabundle/manifest.json`
+- Session now receives trace path from bundle manifest
+- Removed legacy `parser.rs` and `find_trace_path()`
+
+### Verified Commands (New Syntax)
+
+```bash
+# Summary - WORKS
+ada query /tmp/spike_test/*.adabundle summary
+
+# Events with flags at end - WORKS
+ada query /tmp/spike_test/*.adabundle events --limit 10 --format json
+
+# Functions - WORKS
+ada query /tmp/spike_test/*.adabundle functions
+
+# Threads - WORKS
+ada query /tmp/spike_test/*.adabundle threads
+
+# Calls - WORKS
+ada query /tmp/spike_test/*.adabundle calls main --limit 5
+```
+
+### Sample Output
+
+```
+Session: pid_12994
+Module:  test_runloop (5FA20B0E-9966-39DB-BDC7-C1B31320A74F)
+Threads: 6
+Symbols: 155
+Events:     591
+```
+
+### Remaining Work
+
+1. **Install Whisper** - External dependency (`pip install openai-whisper`)
+2. **Claude integration test** - Feed transcript + screenshot + events to Claude
