@@ -1,22 +1,21 @@
 //! Session reader for trace data
 //!
-//! Reads session manifest and provides access to symbols and metadata.
+//! Reads ATF session manifest and provides access to symbols and metadata.
+//! Use Bundle::open() first to resolve the trace path from a bundle.
 
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use super::events::{Event, EventKind, EventReader};
 
 /// A trace session with manifest and symbol information
 pub struct Session {
-    /// Path to the session directory
-    pub path: PathBuf,
     /// Path to the trace directory containing manifest and thread data
-    pub trace_path: PathBuf,
+    pub path: PathBuf,
     /// Parsed manifest
     pub manifest: Manifest,
     /// Symbol lookup by function_id
@@ -85,23 +84,17 @@ pub struct SessionSummary {
 }
 
 impl Session {
-    /// Open a session from a path
+    /// Open a trace session from a trace directory path
     ///
-    /// The path can be:
-    /// - A session directory containing trace/ or bundles/
-    /// - A direct path to a trace directory containing manifest.json
-    pub fn open(path: &Path) -> Result<Self> {
-        let path = path.to_path_buf();
-
-        // Find the trace directory containing manifest.json
-        let trace_path = Self::find_trace_path(&path)?;
-
+    /// This expects a direct path to a trace directory containing manifest.json.
+    /// Use Bundle::open() first to resolve the trace path from a bundle.
+    pub fn open(trace_path: &Path) -> Result<Self> {
         // Read manifest
         let manifest_path = trace_path.join("manifest.json");
         let manifest_content = fs::read_to_string(&manifest_path)
-            .with_context(|| format!("Failed to read manifest at {:?}", manifest_path))?;
+            .with_context(|| format!("Failed to read ATF manifest at {:?}", manifest_path))?;
         let manifest: Manifest = serde_json::from_str(&manifest_content)
-            .with_context(|| "Failed to parse manifest.json")?;
+            .with_context(|| "Failed to parse ATF manifest.json")?;
 
         // Build symbol lookup
         let mut symbols = HashMap::new();
@@ -116,96 +109,11 @@ impl Session {
         }
 
         Ok(Session {
-            path,
-            trace_path,
+            path: trace_path.to_path_buf(),
             manifest,
             symbols,
         })
     }
-
-    /// Find the trace directory containing manifest.json
-    // LCOV_EXCL_START - Filesystem discovery requires real session directories
-    fn find_trace_path(session_path: &Path) -> Result<PathBuf> {
-        // Check if this path directly contains manifest.json
-        if session_path.join("manifest.json").exists() {
-            return Ok(session_path.to_path_buf());
-        }
-
-        // Prefer trace/session_YYYYMMDD_HHMMSS/pid_XXXXX/manifest.json
-        // (contains actual trace data, unlike bundles which may be empty)
-        let trace_path = session_path.join("trace");
-        if trace_path.is_dir() {
-            if let Ok(sessions) = fs::read_dir(&trace_path) {
-                // Sort by name to get most recent session first
-                let mut session_dirs: Vec<_> = sessions
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| p.is_dir())
-                    .collect();
-                session_dirs.sort();
-                session_dirs.reverse(); // Most recent first
-
-                for session_dir in session_dirs {
-                    // Look for pid directories
-                    if let Ok(pids) = fs::read_dir(&session_dir) {
-                        for pid_entry in pids.filter_map(|e| e.ok()) {
-                            let pid_dir = pid_entry.path();
-                            if pid_dir.join("manifest.json").exists() {
-                                // Verify there are actual ATF files with data
-                                if Self::has_valid_atf_files(&pid_dir) {
-                                    return Ok(pid_dir);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to bundles/segment_XXX.adabundle/trace/manifest.json
-        let bundles_path = session_path.join("bundles");
-        if bundles_path.is_dir() {
-            // Find first adabundle with a manifest
-            if let Ok(entries) = fs::read_dir(&bundles_path) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let bundle_trace = entry.path().join("trace");
-                    if bundle_trace.join("manifest.json").exists() {
-                        if Self::has_valid_atf_files(&bundle_trace) {
-                            return Ok(bundle_trace);
-                        }
-                    }
-                }
-            }
-        }
-
-        bail!(
-            "Could not find manifest.json with valid trace data in {:?}. \
-            Expected: trace/session_XXX/pid_XXX/manifest.json or \
-            bundles/segment_XXX.adabundle/trace/manifest.json",
-            session_path
-        )
-    }
-
-    /// Check if directory has valid ATF files with actual events
-    fn has_valid_atf_files(trace_dir: &Path) -> bool {
-        // Check for thread directories with index.atf files containing events
-        if let Ok(entries) = fs::read_dir(trace_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_dir() {
-                    let index_path = path.join("index.atf");
-                    if let Ok(metadata) = fs::metadata(&index_path) {
-                        // Header (64) + Footer (64) + at least one event (32) = 160 bytes
-                        if metadata.len() >= 160 {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
-    }
-    // LCOV_EXCL_STOP
 
     /// Resolve a function_id to its symbol name
     pub fn resolve_symbol(&self, function_id: u64) -> Option<&str> {
@@ -232,7 +140,7 @@ impl Session {
         let mut total_events = 0;
 
         for thread in &self.manifest.threads {
-            let thread_dir = self.trace_path.join(format!("thread_{}", thread.id));
+            let thread_dir = self.path.join(format!("thread_{}", thread.id));
             let index_path = thread_dir.join("index.atf");
 
             if index_path.exists() {
@@ -313,7 +221,7 @@ impl Session {
         let mut all_events: Vec<Event> = Vec::new();
 
         for thread in threads {
-            let thread_dir = self.trace_path.join(format!("thread_{}", thread.id));
+            let thread_dir = self.path.join(format!("thread_{}", thread.id));
             let index_path = thread_dir.join("index.atf");
 
             if !index_path.exists() {

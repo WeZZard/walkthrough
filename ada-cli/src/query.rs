@@ -1,58 +1,86 @@
 //! Query module for ada CLI
 //!
 //! Provides functionality to query captured trace sessions from the command line.
+//! Uses bundle-first architecture: parse bundle manifest, then route to data.
 
+mod bundle;
 mod events;
 mod output;
-mod parser;
 mod session;
 
 use std::path::Path;
 
 use anyhow::Result;
 
-pub use output::OutputFormat;
-pub use parser::Query;
+use crate::QueryCommands;
+use bundle::Bundle;
+use output::OutputFormat;
 
-/// Run a query against a session
+/// Run a query against a bundle
+///
+/// Layer 1: Open and validate the bundle manifest
+/// Layer 2: Dispatch to appropriate data source based on query type
 // LCOV_EXCL_START - Integration function requires real session files
-pub fn run(session_path: &Path, query_str: &str, format: OutputFormat) -> Result<()> {
-    // Open the session
-    let session = session::Session::open(session_path)?;
+pub fn run(bundle_path: &Path, cmd: QueryCommands) -> Result<()> {
+    // Layer 1: Open and validate bundle
+    let bundle = Bundle::open(bundle_path)?;
 
-    // Parse the query
-    let query = Query::parse(query_str)?;
+    // Layer 2: Dispatch based on query type
+    // All current queries are trace queries - need ATF data
+    let session = session::Session::open(&bundle.trace_path())?;
 
-    // Execute the query and format output
-    match query {
-        Query::Summary => {
+    execute_trace_query(&session, cmd)
+}
+
+/// Execute a trace query against an opened session
+fn execute_trace_query(session: &session::Session, cmd: QueryCommands) -> Result<()> {
+    match cmd {
+        QueryCommands::Summary { format } => {
+            let fmt = parse_format(&format)?;
             let summary = session.summary()?;
-            println!("{}", output::format_summary(&summary, format));
+            println!("{}", output::format_summary(&summary, fmt));
         }
-        Query::ListFunctions => {
-            let symbols = session.list_symbols();
-            println!("{}", output::format_functions(&symbols, format));
-        }
-        Query::ListThreads => {
-            let threads = session.list_threads();
-            println!("{}", output::format_threads(&threads, format));
-        }
-        Query::Events {
+        QueryCommands::Events {
             thread,
             function,
             limit,
             offset,
+            format,
         } => {
-            let events = session.query_events(thread, function.as_deref(), limit, offset)?;
-            println!("{}", output::format_events(&events, &session, format));
-        }
-        Query::Calls { function } => {
+            let fmt = parse_format(&format)?;
             let events =
-                session.query_events(None, Some(&function), Some(1000), Some(0))?;
-            println!("{}", output::format_events(&events, &session, format));
+                session.query_events(thread, function.as_deref(), Some(limit), Some(offset))?;
+            println!("{}", output::format_events(&events, session, fmt));
+        }
+        QueryCommands::Functions { format } => {
+            let fmt = parse_format(&format)?;
+            let symbols = session.list_symbols();
+            println!("{}", output::format_functions(&symbols, fmt));
+        }
+        QueryCommands::Threads { format } => {
+            let fmt = parse_format(&format)?;
+            let threads = session.list_threads();
+            println!("{}", output::format_threads(&threads, fmt));
+        }
+        QueryCommands::Calls {
+            function,
+            limit,
+            format,
+        } => {
+            let fmt = parse_format(&format)?;
+            let events =
+                session.query_events(None, Some(&function), Some(limit), Some(0))?;
+            println!("{}", output::format_events(&events, session, fmt));
         }
     }
 
     Ok(())
+}
+
+/// Parse format string to OutputFormat
+fn parse_format(format: &str) -> Result<OutputFormat> {
+    format
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!("{}", e))
 }
 // LCOV_EXCL_STOP

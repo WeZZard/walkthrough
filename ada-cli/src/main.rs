@@ -14,6 +14,8 @@ mod query;
 mod symbols;
 mod trace;
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -48,29 +50,88 @@ enum Commands {
     Capture(capture::CaptureCommands),
 
     // LCOV_EXCL_START - Struct field definitions
-    /// Query trace data
+    /// Query trace data from a bundle
     ///
     /// Examples:
-    ///   ada query /path/to/session summary
-    ///   ada query /path/to/session list functions
-    ///   ada query /path/to/session events limit:100
-    ///   ada query /path/to/session events thread:0 limit:50
-    ///   ada query /path/to/session calls to main
-    ///   ada query /path/to/session --format json summary
+    ///   ada query /path/to/bundle.adabundle summary
+    ///   ada query /path/to/bundle.adabundle events --limit 100
+    ///   ada query /path/to/bundle.adabundle events --thread 0 --limit 50
+    ///   ada query /path/to/bundle.adabundle functions
+    ///   ada query /path/to/bundle.adabundle threads
+    ///   ada query /path/to/bundle.adabundle calls main --format json
     Query {
-        /// Path to session directory
-        session: String,
+        /// Path to .adabundle directory
+        bundle: PathBuf,
 
-        /// Query (summary, list functions, list threads, events, calls to <name>)
-        #[arg(trailing_var_arg = true, required = true)]
-        query: Vec<String>,
+        #[command(subcommand)]
+        command: QueryCommands,
+    },
+    // LCOV_EXCL_STOP
+} // LCOV_EXCL_LINE - Enum closing brace
 
+// LCOV_EXCL_START - Enum field definitions
+/// Query subcommands for trace data
+#[derive(Subcommand)]
+pub enum QueryCommands {
+    /// Show session summary statistics
+    Summary {
         /// Output format (text or json)
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    // LCOV_EXCL_STOP
+
+    /// List trace events with optional filters
+    Events {
+        /// Filter by thread ID
+        #[arg(short, long)]
+        thread: Option<u32>,
+
+        /// Filter by function name (substring match)
+        #[arg(long)]
+        function: Option<String>,
+
+        /// Maximum number of events to return
+        #[arg(short, long, default_value = "1000")]
+        limit: usize,
+
+        /// Number of events to skip
+        #[arg(short, long, default_value = "0")]
+        offset: usize,
+
+        /// Output format (text or json)
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+    },
+
+    /// List all traced functions
+    Functions {
+        /// Output format (text or json)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// List all traced threads
+    Threads {
+        /// Output format (text or json)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Find calls to a specific function
+    Calls {
+        /// Function name to search for (substring match)
+        function: String,
+
+        /// Maximum number of results
+        #[arg(short, long, default_value = "1000")]
+        limit: usize,
+
+        /// Output format (text or json)
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+    },
 }
+// LCOV_EXCL_STOP
 
 fn main() -> anyhow::Result<()> {
     // Initialize logging
@@ -91,20 +152,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Symbols(cmd) => symbols::run(cmd),
         Commands::Capture(cmd) => capture::run(cmd),
         // LCOV_EXCL_START - CLI entry point requires real session files
-        Commands::Query {
-            session,
-            query: query_words,
-            format,
-        } => {
-            use std::path::PathBuf;
-
-            let query_str = query_words.join(" ");
-            let output_format: query::OutputFormat = format
-                .parse()
-                .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-
-            query::run(&PathBuf::from(session), &query_str, output_format)
-        }
+        Commands::Query { bundle, command } => query::run(&bundle, command),
         // LCOV_EXCL_STOP
     }
 }
