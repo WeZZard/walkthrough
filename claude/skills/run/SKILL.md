@@ -14,9 +14,10 @@ Launch an application with ADA tracing enabled, capturing execution traces, voic
 Before running any ada command, set the environment:
 
 ```bash
-export ADA_AGENT_RPATH_SEARCH_PATHS="${ADA_ROOT}/lib"
-export PATH="${ADA_ROOT}/bin:$PATH"
+export ADA_AGENT_RPATH_SEARCH_PATHS="${ADA_LIB_DIR}"
 ```
+
+**IMPORTANT**: Always use the full path `${ADA_BIN_DIR}/ada` for commands to avoid conflicts with other `ada` binaries in PATH.
 
 ## Workflow
 
@@ -45,16 +46,16 @@ swift build -c release
 
 ```bash
 # Full capture (trace + screen + voice) - default
-ada capture start <binary_path>
+${ADA_BIN_DIR}/ada capture start <binary_path>
 
 # Trace + screen only (no voice)
-ada capture start <binary_path> --no-voice
+${ADA_BIN_DIR}/ada capture start <binary_path> --no-voice
 
 # Trace + voice only (no screen)
-ada capture start <binary_path> --no-screen
+${ADA_BIN_DIR}/ada capture start <binary_path> --no-screen
 
 # Trace only (no screen or voice)
-ada capture start <binary_path> --no-screen --no-voice
+${ADA_BIN_DIR}/ada capture start <binary_path> --no-screen --no-voice
 ```
 
 ### Step 4: Provide Feedback
@@ -63,7 +64,7 @@ Report to user:
 
 - Session directory path
 - Capture status
-- How to stop: `ada capture stop`
+- How to stop: `${ADA_BIN_DIR}/ada capture stop`
 - How to analyze: Use `ada:analyze` skill
 
 ## Error Handling

@@ -14,9 +14,10 @@ Analyze a captured ADA session using time-correlated multimodal data: execution 
 Before running any ada command, set the environment:
 
 ```bash
-export ADA_AGENT_RPATH_SEARCH_PATHS="${ADA_ROOT}/lib"
-export PATH="${ADA_ROOT}/bin:$PATH"
+export ADA_AGENT_RPATH_SEARCH_PATHS="${ADA_LIB_DIR}"
 ```
+
+**IMPORTANT**: Always use the full path `${ADA_BIN_DIR}/ada` for commands to avoid conflicts with other `ada` binaries in PATH.
 
 ## Workflow
 
@@ -24,23 +25,23 @@ export PATH="${ADA_ROOT}/bin:$PATH"
 
 ```bash
 # Get latest session info
-ada query @latest time-info
+${ADA_BIN_DIR}/ada query @latest time-info
 
 # Or list available sessions
-ada query --list-sessions
+${ADA_BIN_DIR}/ada query --list-sessions
 ```
 
 ### Step 2: Gather Session Data
 
 ```bash
 # Get session time bounds
-ada query @latest time-info
+${ADA_BIN_DIR}/ada query @latest time-info
 
 # Get transcript (if voice was recorded)
-ada query @latest transcribe segments
+${ADA_BIN_DIR}/ada query @latest transcribe segments
 
 # Get screenshot at specific time
-ada query @latest screenshot --time <seconds>
+${ADA_BIN_DIR}/ada query @latest screenshot --time <seconds>
 ```
 
 ### Step 3: Time Correlation
@@ -55,13 +56,13 @@ Map user's verbal descriptions to nanosecond-precision timestamps:
 
 ```bash
 # Query events in time window
-ada query @latest events --since-ns <ns> --until-ns <ns>
+${ADA_BIN_DIR}/ada query @latest events --since-ns <ns> --until-ns <ns>
 
 # Query with result limit
-ada query @latest events --since-ns <ns> --until-ns <ns> --limit 100
+${ADA_BIN_DIR}/ada query @latest events --since-ns <ns> --until-ns <ns> --limit 100
 
 # Query specific function
-ada query @latest events --since-ns <ns> --until-ns <ns> --function <name>
+${ADA_BIN_DIR}/ada query @latest events --since-ns <ns> --until-ns <ns> --function <name>
 ```
 
 ### Step 5: Multimodal Analysis
@@ -87,4 +88,4 @@ Deliver structured analysis:
 - **No voice recording**: Session captured with `--no-voice`; analyze using events and screenshots
 - **No screen recording**: Session captured with `--no-screen`; analyze using events and transcript
 - **Empty trace**: Check if capture was running during issue
-- **ADA not found**: Ensure `PATH` includes `${ADA_ROOT}/bin`
+- **ADA not found**: Ensure `${ADA_BIN_DIR}/ada` exists and is executable

@@ -69,8 +69,12 @@ fi
 # Determine path prefix for substitution
 if [[ "$FORM" == "standalone" ]]; then
     ADA_ROOT="$PROJECT_ROOT/target/release"
+    ADA_LIB_DIR="$PROJECT_ROOT/target/release/tracer_backend/lib"
+    ADA_BIN_DIR="$PROJECT_ROOT/target/release"
 else
     ADA_ROOT="\${CLAUDE_PLUGIN_ROOT}"
+    ADA_LIB_DIR="\${CLAUDE_PLUGIN_ROOT}/lib"
+    ADA_BIN_DIR="\${CLAUDE_PLUGIN_ROOT}/bin"
 fi
 
 # Create output structure
@@ -122,7 +126,9 @@ EOF
     # Copy and substitute skills
     for skill in run analyze; do
         if [[ -f "$PROJECT_ROOT/claude/skills/$skill/SKILL.md" ]]; then
-            sed "s|\${ADA_ROOT}|$ADA_ROOT|g" \
+            sed -e "s|\${ADA_ROOT}|$ADA_ROOT|g" \
+                -e "s|\${ADA_LIB_DIR}|$ADA_LIB_DIR|g" \
+                -e "s|\${ADA_BIN_DIR}|$ADA_BIN_DIR|g" \
                 "$PROJECT_ROOT/claude/skills/$skill/SKILL.md" \
                 > "$OUTPUT_DIR/skills/$skill/SKILL.md"
         fi
@@ -141,7 +147,9 @@ else
 
     for skill in run analyze; do
         if [[ -f "$PROJECT_ROOT/claude/skills/$skill/SKILL.md" ]]; then
-            sed "s|\${ADA_ROOT}|$ADA_ROOT|g" \
+            sed -e "s|\${ADA_ROOT}|$ADA_ROOT|g" \
+                -e "s|\${ADA_LIB_DIR}|$ADA_LIB_DIR|g" \
+                -e "s|\${ADA_BIN_DIR}|$ADA_BIN_DIR|g" \
                 "$PROJECT_ROOT/claude/skills/$skill/SKILL.md" \
                 > "$OUTPUT_DIR/$skill.md"
         fi
