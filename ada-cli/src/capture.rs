@@ -12,7 +12,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracer_backend::TracerController;
 
 use crate::session_state::{self, SessionState, SessionStatus};
@@ -35,14 +35,6 @@ pub enum CaptureCommands {
         #[arg(long = "no-voice")]
         no_voice: bool,
 
-        /// Include microphone audio in screen recording
-        #[arg(long, default_value_t = false)]
-        screen_audio: bool,
-
-        /// Audio device spec for ffmpeg (avfoundation), e.g. ":0"
-        #[arg(long)]
-        audio_device: Option<String>,
-
         /// Detail pre-roll in ms (flight recorder)
         #[arg(long, default_value_t = 0)]
         pre_roll_ms: u32,
@@ -55,6 +47,13 @@ pub enum CaptureCommands {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
+
+    /// Stop a running capture session
+    Stop {
+        /// Session ID to stop (defaults to latest running session)
+        #[arg(long)]
+        session_id: Option<String>,
+    },
 }
 
 // LCOV_EXCL_START - Entry point delegates to start_capture which requires live hardware
@@ -64,21 +63,11 @@ pub fn run(cmd: CaptureCommands) -> anyhow::Result<()> {
             binary,
             no_screen,
             no_voice,
-            screen_audio,
-            audio_device,
             pre_roll_ms,
             post_roll_ms,
             args,
-        } => start_capture(
-            &binary,
-            !no_screen,
-            !no_voice,
-            screen_audio,
-            audio_device.as_deref(),
-            pre_roll_ms,
-            post_roll_ms,
-            &args,
-        ),
+        } => start_capture(&binary, !no_screen, !no_voice, pre_roll_ms, post_roll_ms, &args),
+        CaptureCommands::Stop { session_id } => stop_capture(session_id),
     }
 }
 // LCOV_EXCL_STOP
@@ -94,15 +83,7 @@ struct BundleManifest {
     screen_path: Option<String>,
     voice_path: Option<String>,
     voice_lossless_path: Option<String>,
-    voice_log_path: Option<String>,
-    screen_log_path: Option<String>,
     detail_when_voice: bool,
-}
-
-struct RecorderChild {
-    name: &'static str,
-    child: Child,
-    output: PathBuf,
 }
 
 // LCOV_EXCL_START - macOS app bundle resolution and agent path setup
@@ -219,6 +200,31 @@ fn ensure_agent_rpath() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Find the ada-recorder binary
+fn find_ada_recorder() -> anyhow::Result<PathBuf> {
+    // 1. Same directory as ada binary
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let recorder = dir.join("ada-recorder");
+            if recorder.exists() {
+                return Ok(recorder);
+            }
+        }
+    }
+
+    // 2. PATH lookup
+    if let Ok(path) = which::which("ada-recorder") {
+        return Ok(path);
+    }
+
+    bail!(
+        "ada-recorder not found.\n\
+         Install it by running:\n\
+         cd ada-recorder/macos && swift build -c release\n\
+         cp .build/release/ada-recorder <ada-binary-directory>/"
+    )
+}
+
 // LCOV_EXCL_STOP
 
 // LCOV_EXCL_START - Integration code requires live tracer and capture hardware
@@ -227,8 +233,6 @@ fn start_capture(
     binary: &str,
     screen: bool,
     voice: bool,
-    screen_audio: bool,
-    audio_device: Option<&str>,
     pre_roll_ms: u32,
     post_roll_ms: u32,
     args: &[String],
@@ -284,19 +288,20 @@ fn start_capture(
     println!("  Binary: {}", binary);
     println!("  Bundle: {}", bundle_dir.display());
     println!("  Time: {}", session.start_time);
+
     let mut controller = map_tracer_result(TracerController::new(&trace_root))?;
 
     let mut spawn_args = vec![binary.to_string()];
     spawn_args.extend_from_slice(args);
-    let pid = map_tracer_result(controller.spawn_suspended(binary, &spawn_args))?;
+    let target_pid = map_tracer_result(controller.spawn_suspended(binary, &spawn_args))?;
 
     // Update session with target PID
     if let Ok(Some(mut session)) = session_state::get(&session_id) {
-        session.pid = Some(pid);
+        session.pid = Some(target_pid);
         let _ = session_state::update(&session_id, &session);
     }
 
-    map_tracer_result(controller.attach(pid))?;
+    map_tracer_result(controller.attach(target_pid))?;
     map_tracer_result(controller.install_hooks())?;
 
     if voice {
@@ -307,14 +312,10 @@ fn start_capture(
     map_tracer_result(controller.set_detail_enabled(voice))?;
     map_tracer_result(controller.resume())?;
 
-    let mut screen_recorder = None;
-    if screen {
-        screen_recorder = Some(start_screen_recording(&bundle_dir, screen_audio)?);
-    }
-
-    let mut voice_recorder = None;
-    if voice {
-        voice_recorder = Some(start_voice_recording(&bundle_dir, audio_device)?);
+    // Start ada-recorder for screen/voice recording
+    let mut recorder_child = None;
+    if screen || voice {
+        recorder_child = Some(start_ada_recorder(&bundle_dir, screen, voice)?);
     }
 
     println!("Capture running. Press Ctrl+C to stop.");
@@ -325,19 +326,20 @@ fn start_capture(
         running_flag.store(false, Ordering::SeqCst);
     })?;
 
-    while running.load(Ordering::SeqCst) {
-        thread::sleep(Duration::from_millis(200));
+    // Main loop: monitor both Ctrl+C and target process
+    let exit_reason = wait_for_termination(&running, target_pid);
+
+    println!("\n{}", exit_reason);
+
+    // Stop recorder first (sends SIGTERM)
+    if let Some(mut child) = recorder_child {
+        stop_ada_recorder(&mut child)?;
     }
 
-    if let Some(recorder) = voice_recorder.as_mut() {
-        stop_recorder(recorder)?;
+    // Cleanup tracer
+    if voice {
         let _ = map_tracer_result(controller.disarm_trigger());
         let _ = map_tracer_result(controller.set_detail_enabled(false));
-        let _ = encode_voice_to_aac(&bundle_dir)?;
-    }
-
-    if let Some(recorder) = screen_recorder.as_mut() {
-        stop_recorder(recorder)?;
     }
 
     if let Err(err) = controller.detach() {
@@ -345,12 +347,18 @@ fn start_capture(
     }
     drop(controller);
 
+    // Encode voice to AAC if we have a WAV file
+    let voice_wav = bundle_dir.join("voice.wav");
+    if voice_wav.exists() {
+        if let Err(e) = encode_voice_to_aac(&bundle_dir) {
+            eprintln!("Warning: Failed to encode voice to AAC: {}", e);
+        }
+    }
+
     let finished_at_ms = current_time_ms();
     let trace_session = find_latest_trace_session(&trace_root);
 
-    fs::create_dir_all(&bundle_dir)
-        .with_context(|| format!("Failed to create bundle directory at {}", bundle_dir.display()))?;
-
+    // Write manifest
     let manifest = BundleManifest {
         version: 1,
         created_at_ms: now_ms,
@@ -360,26 +368,18 @@ fn start_capture(
         trace_session: trace_session
             .as_ref()
             .map(|path| path_as_string(&bundle_dir, path)),
-        screen_path: screen_recorder
-            .as_ref()
-            .map(|recorder| path_as_string(&bundle_dir, &recorder.output)),
-        voice_path: if voice_recorder.is_some() {
-            Some(path_as_string(&bundle_dir, &bundle_dir.join("voice.m4a")))
+        screen_path: if screen && bundle_dir.join("screen.mp4").exists() {
+            Some("screen.mp4".to_string())
         } else {
             None
         },
-        voice_lossless_path: if voice_recorder.is_some() {
-            Some(path_as_string(&bundle_dir, &bundle_dir.join("voice.wav")))
+        voice_path: if voice && bundle_dir.join("voice.m4a").exists() {
+            Some("voice.m4a".to_string())
         } else {
             None
         },
-        voice_log_path: if voice_recorder.is_some() {
-            Some(path_as_string(&bundle_dir, &bundle_dir.join("voice_ffmpeg.log")))
-        } else {
-            None
-        },
-        screen_log_path: if screen_recorder.is_some() {
-            Some(path_as_string(&bundle_dir, &bundle_dir.join("screen_ffmpeg.log")))
+        voice_lossless_path: if voice && voice_wav.exists() {
+            Some("voice.wav".to_string())
         } else {
             None
         },
@@ -400,10 +400,154 @@ fn start_capture(
         let _ = session_state::update(&session_id, &session);
     }
 
-    println!("\nADA Session Complete:");
+    println!("ADA Session Complete:");
     println!("  ID: {}", session_id);
     println!("  Bundle: {}", bundle_dir.display());
     println!("  Manifest: {}", manifest_path.display());
+    Ok(())
+}
+
+/// Wait for either Ctrl+C or target process termination
+fn wait_for_termination(running: &Arc<AtomicBool>, target_pid: u32) -> String {
+    loop {
+        // Check Ctrl+C
+        if !running.load(Ordering::SeqCst) {
+            return "User interrupted (Ctrl+C)".to_string();
+        }
+
+        // Check if target process is still alive using waitpid with WNOHANG
+        let mut status: i32 = 0;
+        let result = unsafe { libc::waitpid(target_pid as i32, &mut status, libc::WNOHANG) };
+
+        if result > 0 {
+            // Process state changed
+            if libc::WIFEXITED(status) {
+                let exit_code = libc::WEXITSTATUS(status);
+                return format!("Target process exited with code {}", exit_code);
+            } else if libc::WIFSIGNALED(status) {
+                let signal = libc::WTERMSIG(status);
+                let signal_name = match signal {
+                    libc::SIGTERM => "SIGTERM",
+                    libc::SIGKILL => "SIGKILL",
+                    libc::SIGSEGV => "SIGSEGV (crash)",
+                    libc::SIGABRT => "SIGABRT (abort)",
+                    libc::SIGBUS => "SIGBUS",
+                    libc::SIGFPE => "SIGFPE",
+                    libc::SIGILL => "SIGILL",
+                    _ => "unknown signal",
+                };
+                return format!("Target process killed by {} ({})", signal_name, signal);
+            }
+        } else if result == -1 {
+            // Error - process might not be our child, use kill(0) to check
+            let alive = unsafe { libc::kill(target_pid as i32, 0) };
+            if alive != 0 {
+                return "Target process terminated".to_string();
+            }
+        }
+
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Start ada-recorder subprocess for screen and voice recording
+fn start_ada_recorder(bundle_dir: &Path, screen: bool, voice: bool) -> anyhow::Result<Child> {
+    let recorder_path = find_ada_recorder()?;
+
+    let mut cmd = Command::new(&recorder_path);
+    cmd.arg("start")
+        .arg("--output-dir")
+        .arg(bundle_dir);
+
+    if !screen {
+        cmd.arg("--no-screen");
+    }
+    if !voice {
+        cmd.arg("--no-voice");
+    }
+
+    let child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("Failed to start ada-recorder at {}", recorder_path.display()))?;
+
+    // Give recorder time to initialize
+    thread::sleep(Duration::from_millis(500));
+
+    Ok(child)
+}
+
+/// Stop ada-recorder gracefully
+fn stop_ada_recorder(child: &mut Child) -> anyhow::Result<()> {
+    // Check if already exited
+    if child.try_wait()?.is_some() {
+        return Ok(());
+    }
+
+    // Send SIGTERM for graceful shutdown
+    let pid = child.id();
+    let result = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+    if result != 0 {
+        // Process might already be gone
+        return Ok(());
+    }
+
+    // Wait up to 5 seconds for graceful shutdown
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if child.try_wait()?.is_some() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    // Force kill if still running
+    eprintln!("Warning: ada-recorder did not stop gracefully, forcing termination");
+    let _ = child.kill();
+    let _ = child.wait();
+    Ok(())
+}
+
+/// Stop a running capture session
+fn stop_capture(session_id: Option<String>) -> anyhow::Result<()> {
+    // Find the session to stop
+    let session = if let Some(id) = session_id {
+        session_state::get(&id)?.ok_or_else(|| anyhow::anyhow!("Session {} not found", id))?
+    } else {
+        session_state::latest_running()?.ok_or_else(|| anyhow::anyhow!("No running sessions found"))?
+    };
+
+    if session.status != SessionStatus::Running {
+        bail!("Session {} is not running (status: {:?})", session.session_id, session.status);
+    }
+
+    // Send SIGINT to the capture process
+    if let Some(capture_pid) = session.capture_pid {
+        println!("Stopping session {}...", session.session_id);
+        let result = unsafe { libc::kill(capture_pid as i32, libc::SIGINT) };
+        if result == 0 {
+            println!("Stop signal sent to capture process (PID {})", capture_pid);
+            println!("Session will complete shortly.");
+        } else {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::ESRCH) {
+                // Process doesn't exist - mark as failed
+                eprintln!("Capture process not found. Marking session as failed.");
+                if let Ok(Some(mut s)) = session_state::get(&session.session_id) {
+                    s.status = SessionStatus::Failed;
+                    s.end_time = Some(chrono::Utc::now().to_rfc3339());
+                    let _ = session_state::update(&session.session_id, &s);
+                }
+            } else {
+                bail!("Failed to send stop signal: {}", err);
+            }
+        }
+    } else {
+        bail!("Session {} has no capture process ID", session.session_id);
+    }
+
     Ok(())
 }
 
@@ -456,111 +600,6 @@ mod tests {
     }
 }
 
-fn start_screen_recording(bundle_dir: &Path, screen_audio: bool) -> anyhow::Result<RecorderChild> {
-    let output = bundle_dir.join("screen.mp4");
-    let log_path = bundle_dir.join("screen_ffmpeg.log");
-
-    let mut cmd = Command::new("screencapture");
-    cmd.arg("-v").arg("-J").arg("video").arg("-U");
-    if screen_audio {
-        cmd.arg("-g");
-    }
-    cmd.arg(&output);
-
-    let child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(open_log_file(&log_path)?)
-        .spawn()
-        .context("Failed to start screencapture")?;
-
-    Ok(RecorderChild {
-        name: "screen",
-        child,
-        output,
-    })
-}
-
-fn start_voice_recording(
-    bundle_dir: &Path,
-    audio_device: Option<&str>,
-) -> anyhow::Result<RecorderChild> {
-    let ffmpeg = which::which("ffmpeg").context("ffmpeg not found in PATH")?;
-    let output = bundle_dir.join("voice.wav");
-    let log_path = bundle_dir.join("voice_ffmpeg.log");
-    let device = audio_device.unwrap_or(":0");
-
-    let mut cmd = Command::new(ffmpeg);
-    cmd.args([
-        "-f",
-        "avfoundation",
-        "-loglevel",
-        "info",
-        "-thread_queue_size",
-        "1024",
-        "-rtbufsize",
-        "256M",
-        "-i",
-        device,
-        "-ac",
-        "1",
-        "-c:a",
-        "pcm_s16le",
-        "-y",
-    ]);
-    cmd.arg(&output);
-
-    let child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(open_log_file(&log_path)?)
-        .spawn()
-        .context("Failed to start voice recorder (ffmpeg)")?;
-
-    Ok(RecorderChild {
-        name: "voice",
-        child,
-        output,
-    })
-}
-
-fn stop_recorder(recorder: &mut RecorderChild) -> anyhow::Result<()> {
-    if recorder.child.try_wait()?.is_some() {
-        return Ok(());
-    }
-
-    send_signal(recorder.child.id(), libc::SIGINT)?;
-
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < deadline {
-        if recorder.child.try_wait()?.is_some() {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-
-    recorder.child.kill()?;
-    let _ = recorder.child.wait();
-    Ok(())
-}
-
-fn send_signal(pid: u32, signal: i32) -> std::io::Result<()> {
-    let result = unsafe { libc::kill(pid as i32, signal) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
-fn open_log_file(path: &Path) -> anyhow::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .with_context(|| format!("Failed to open log file {}", path.display()))
-}
-
 fn encode_voice_to_aac(bundle_dir: &Path) -> anyhow::Result<PathBuf> {
     let ffmpeg = which::which("ffmpeg").context("ffmpeg not found in PATH")?;
     let input = bundle_dir.join("voice.wav");
@@ -581,6 +620,8 @@ fn encode_voice_to_aac(bundle_dir: &Path) -> anyhow::Result<PathBuf> {
             "128k",
         ])
         .arg(&output)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .context("Failed to encode voice.m4a")?;
 
