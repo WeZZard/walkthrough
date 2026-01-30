@@ -13,9 +13,11 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # Parse arguments
 FORM=""
 OUTPUT_DIR="$PROJECT_ROOT/dist"
+BUILD_PROFILE="release"
+DO_BUILD=false
 
 usage() {
-    echo "Usage: $0 --form <plugin|standalone> [--output <dir>]"
+    echo "Usage: $0 --form <plugin|standalone> [options]"
     echo ""
     echo "Create distribution packages for ADA skills."
     echo ""
@@ -24,6 +26,9 @@ usage() {
     echo "                                standalone - Hardcode paths to ADA-codex project location"
     echo "                                plugin     - Use \${CLAUDE_PLUGIN_ROOT} variable for paths"
     echo "  --output <dir>              Output directory (default: ./dist)"
+    echo "  --debug                     Use debug build instead of release"
+    echo "  --build                     Build binaries before distributing"
+    echo "  -h, --help                  Show this help message"
     exit 1
 }
 
@@ -41,6 +46,14 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --debug)
+            BUILD_PROFILE="debug"
+            shift
+            ;;
+        --build)
+            DO_BUILD=true
+            shift
+            ;;
         -h|--help)
             usage
             ;;
@@ -53,24 +66,62 @@ done
 
 [[ -z "$FORM" ]] && { echo "Error: --form is required"; usage; }
 
+# Set target directory based on profile
+TARGET_DIR="$PROJECT_ROOT/target/$BUILD_PROFILE"
+
+# Build if requested
+if [[ "$DO_BUILD" == true ]]; then
+    echo "Building ADA ($BUILD_PROFILE profile)..."
+
+    if [[ "$BUILD_PROFILE" == "release" ]]; then
+        cargo build --release -p ada-cli
+    else
+        cargo build -p ada-cli
+    fi
+
+    # Build ada-recorder (Swift)
+    echo "Building ada-recorder..."
+    pushd "$PROJECT_ROOT/ada-recorder/macos" > /dev/null
+    if [[ "$BUILD_PROFILE" == "release" ]]; then
+        swift build -c release
+        cp .build/release/ada-recorder "$TARGET_DIR/"
+    else
+        swift build
+        cp .build/debug/ada-recorder "$TARGET_DIR/"
+    fi
+    popd > /dev/null
+
+    echo "Build complete."
+fi
+
 # Verify binaries exist
-if [[ ! -f "$PROJECT_ROOT/target/release/ada" ]]; then
-    echo "Error: ada binary not found at $PROJECT_ROOT/target/release/ada"
-    echo "Run 'cargo build --release -p ada-cli' first."
+if [[ ! -f "$TARGET_DIR/ada" ]]; then
+    echo "Error: ada binary not found at $TARGET_DIR/ada"
+    echo "Run with --build flag or manually build first:"
+    if [[ "$BUILD_PROFILE" == "release" ]]; then
+        echo "  cargo build --release -p ada-cli"
+    else
+        echo "  cargo build -p ada-cli"
+    fi
     exit 1
 fi
 
-if [[ ! -f "$PROJECT_ROOT/target/release/tracer_backend/lib/libfrida_agent.dylib" ]]; then
+if [[ ! -f "$TARGET_DIR/tracer_backend/lib/libfrida_agent.dylib" ]]; then
     echo "Error: libfrida_agent.dylib not found"
-    echo "Run 'cargo build --release' first."
+    echo "Run with --build flag or manually build first:"
+    if [[ "$BUILD_PROFILE" == "release" ]]; then
+        echo "  cargo build --release"
+    else
+        echo "  cargo build"
+    fi
     exit 1
 fi
 
 # Determine path prefix for substitution
 if [[ "$FORM" == "standalone" ]]; then
-    ADA_ROOT="$PROJECT_ROOT/target/release"
-    ADA_LIB_DIR="$PROJECT_ROOT/target/release/tracer_backend/lib"
-    ADA_BIN_DIR="$PROJECT_ROOT/target/release"
+    ADA_ROOT="$TARGET_DIR"
+    ADA_LIB_DIR="$TARGET_DIR/tracer_backend/lib"
+    ADA_BIN_DIR="$TARGET_DIR"
 else
     ADA_ROOT="\${CLAUDE_PLUGIN_ROOT}"
     ADA_LIB_DIR="\${CLAUDE_PLUGIN_ROOT}/lib"
@@ -111,17 +162,25 @@ if [[ "$FORM" == "plugin" ]]; then
 EOF
 
     # Copy binaries
-    cp "$PROJECT_ROOT/target/release/ada" "$OUTPUT_DIR/bin/"
+    cp "$TARGET_DIR/ada" "$OUTPUT_DIR/bin/"
     chmod +x "$OUTPUT_DIR/bin/ada"
 
+    # Copy ada-recorder if it exists
+    if [[ -f "$TARGET_DIR/ada-recorder" ]]; then
+        cp "$TARGET_DIR/ada-recorder" "$OUTPUT_DIR/bin/"
+        chmod +x "$OUTPUT_DIR/bin/ada-recorder"
+    else
+        echo "Warning: ada-recorder not found at $TARGET_DIR/ada-recorder"
+    fi
+
     # Copy ada-capture-daemon if it exists
-    if [[ -f "$PROJECT_ROOT/target/release/ada-capture-daemon" ]]; then
-        cp "$PROJECT_ROOT/target/release/ada-capture-daemon" "$OUTPUT_DIR/bin/"
+    if [[ -f "$TARGET_DIR/ada-capture-daemon" ]]; then
+        cp "$TARGET_DIR/ada-capture-daemon" "$OUTPUT_DIR/bin/"
         chmod +x "$OUTPUT_DIR/bin/ada-capture-daemon"
     fi
 
     # Copy library
-    cp "$PROJECT_ROOT/target/release/tracer_backend/lib/libfrida_agent.dylib" "$OUTPUT_DIR/lib/"
+    cp "$TARGET_DIR/tracer_backend/lib/libfrida_agent.dylib" "$OUTPUT_DIR/lib/"
 
     # Copy and substitute skills
     for skill in run analyze; do
@@ -134,8 +193,10 @@ EOF
         fi
     done
 
+    echo ""
     echo "Distribution created at: $OUTPUT_DIR"
     echo "Form: plugin"
+    echo "Profile: $BUILD_PROFILE"
     echo "ADA_ROOT: $ADA_ROOT"
     echo ""
     echo "Contents:"
@@ -155,8 +216,10 @@ else
         fi
     done
 
+    echo ""
     echo "Distribution created at: $OUTPUT_DIR"
     echo "Form: standalone"
+    echo "Profile: $BUILD_PROFILE"
     echo "ADA_ROOT: $ADA_ROOT"
     echo ""
     echo "Files:"
