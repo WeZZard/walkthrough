@@ -14,12 +14,14 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 FORM=""
 OUTPUT_DIR="$PROJECT_ROOT/dist"
 BUILD_PROFILE="release"
-DO_BUILD=false
+DO_BUILD=true  # Build by default (incremental, so cheap if nothing changed)
 
 usage() {
     echo "Usage: $0 --form <plugin|standalone> [options]"
     echo ""
     echo "Create distribution packages for ADA skills."
+    echo ""
+    echo "Builds binaries by default (incremental - fast if nothing changed)."
     echo ""
     echo "Options:"
     echo "  --form <plugin|standalone>  Required. Distribution form:"
@@ -27,7 +29,7 @@ usage() {
     echo "                                plugin     - Use \${CLAUDE_PLUGIN_ROOT} variable for paths"
     echo "  --output <dir>              Output directory (default: ./dist)"
     echo "  --debug                     Use debug build instead of release"
-    echo "  --build                     Build binaries before distributing"
+    echo "  --no-build                  Skip build, use existing binaries"
     echo "  -h, --help                  Show this help message"
     exit 1
 }
@@ -50,8 +52,8 @@ while [[ $# -gt 0 ]]; do
             BUILD_PROFILE="debug"
             shift
             ;;
-        --build)
-            DO_BUILD=true
+        --no-build)
+            DO_BUILD=false
             shift
             ;;
         -h|--help)
