@@ -9,6 +9,7 @@
 //! - `ada query` - Query trace data
 
 mod capture;
+mod doctor;
 mod ffi;
 mod query;
 mod session_state;
@@ -53,6 +54,10 @@ enum Commands {
     /// Manage ADA capture sessions
     #[command(subcommand)]
     Session(session_state::SessionCommands),
+
+    /// Check system health and dependencies
+    #[command(subcommand)]
+    Doctor(doctor::DoctorCommands),
 
     // LCOV_EXCL_START - Struct field definitions
     /// Query trace data from a bundle
@@ -236,6 +241,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Symbols(cmd) => symbols::run(cmd),
         Commands::Capture(cmd) => capture::run(cmd),
         Commands::Session(cmd) => session_state::run(cmd),
+        Commands::Doctor(cmd) => doctor::run(cmd),
         Commands::Query { bundle, command } => query::run(&bundle, command),
     }
     // LCOV_EXCL_STOP

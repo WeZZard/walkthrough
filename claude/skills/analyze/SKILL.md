@@ -24,6 +24,27 @@ export ADA_AGENT_RPATH_SEARCH_PATHS="${ADA_LIB_DIR}"
 You MUST recognize session to analyze and set $SESSION to the session ID.
 You MUST set $SESSION to @latest, if the user does not ask for a session to analyze.
 
+## MANDATORY: Step 0. Preflight Check
+
+**If $PREFLIGHT_CHECK is set to 1, skip to Step 1.**
+
+Run the ADA doctor to verify all dependencies:
+
+```bash
+${ADA_BIN_DIR}/ada doctor check --format json
+```
+
+Parse the JSON output. Check all fields are `ok: true`.
+
+**If any check fails:**
+1. Show the user which checks failed with fix instructions
+2. Stop and ask user to fix issues
+3. After fixes, re-run `ada doctor check`
+
+**If all checks pass:**
+- Set `$PREFLIGHT_CHECK = 1`
+- Continue to Step 1
+
 ## MANDATORY: Step 1. Intent Extraction
 
 You **MUST** use Task tool with the following invocation which carries an inlined task prompt to extract user intents from the voice transcript in the session bundle.
@@ -267,12 +288,14 @@ If this fails, guide user to use `ada:run` skill first to capture a session.
 If OpenAI Whisper is not installed:
 1. Inform user: "OpenAI Whisper is not installed. Cannot perform voice analysis."
 2. Suggest installing it using `brew install openai-whisper`
+3. For full system check, suggest running the `ada-doctor` skill.
 
 ### No FFMPEG Installed
 
 If FFMPEG is not installed:
 1. Inform user: "FFMPEG is not installed. Cannot perform screen analysis."
 2. Suggest installing it using `brew install ffmpeg`
+3. For full system check, suggest running the `ada-doctor` skill.
 
 ### No Voice Recording
 
@@ -295,10 +318,6 @@ If no trace events exist:
 1. Inform user: "No trace events found in this session."
 2. Check if the correct process was traced
 3. Suggest re-running capture with correct target
-
-### ADA Binary Not Found
-
-Ensure `${ADA_BIN_DIR}/ada` exists and is executable. If not, inform user to build ADA first.
 
 ---
 

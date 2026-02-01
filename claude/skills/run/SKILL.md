@@ -7,9 +7,9 @@ description: "Launch application with ADA tracing - captures execution traces, v
 
 ## Purpose
 
-Launch an application with ADA tracing enabled, capturing execution traces, voice narration, and screen recording for later analysis. Screen and voice recording are enabled by default and can be disabled with `--no-screen` and `--no-voice` flags.
+Launch an application with ADA tracing enabled, capturing execution traces, voice narration, and screen recording for later analysis.
 
-## Environment Setup
+## MANDATORY: Environment Setup
 
 Before running any ada command, set the environment:
 
@@ -21,56 +21,70 @@ export ADA_AGENT_RPATH_SEARCH_PATHS="${ADA_LIB_DIR}"
 
 ## Workflow
 
-### Step 1: Project Detection
+### MANDATORY: Step 1. Preflight Check
 
-Check for project files in current directory:
-- `*.xcodeproj` or `*.xcworkspace` → Xcode project
-- `Cargo.toml` → Rust/Cargo project
-- `Package.swift` → Swift Package Manager
-- User-specified binary path → Generic binary
+**If $PREFLIGHT_CHECK is set to 1, skip to Step 1.**
 
-### Step 2: Build (if applicable)
+Run the ADA doctor to verify all dependencies:
 
 ```bash
-# For Cargo projects:
-cargo build --release
-
-# For Xcode projects:
-xcodebuild -scheme <scheme> -configuration Release build
-
-# For Swift Package:
-swift build -c release
+${ADA_BIN_DIR}/ada doctor check --format json
 ```
 
-### Step 3: Start Capture
+Parse the JSON output. Check all fields are `ok: true`.
 
-```bash
-# Full capture (trace + screen + voice) - default
+**If any check fails:**
+1. Show the user which checks failed with fix instructions
+2. Stop and ask user to fix issues
+3. After fixes, re-run `ada doctor check`
+
+**If all checks pass:**
+- Set `$PREFLIGHT_CHECK = 1`
+- Continue to Step 1
+
+### MANDATORY: Step 2. Project Detection
+
+You ***MUST** explore the project to find the app to run and the build system building it.
+
+### MANDATORY: Step 3. Build (if applicable)
+
+You MAY use the app's build system to build the app.
+
+### MANDATORY: Step 4. Start Capture
+
+Start capturing with the following command:
+
+<example>
 ${ADA_BIN_DIR}/ada capture start <binary_path>
+</example>
 
-# Trace + screen only (no voice)
-${ADA_BIN_DIR}/ada capture start <binary_path> --no-voice
+**Report to user:**
 
-# Trace + voice only (no screen)
-${ADA_BIN_DIR}/ada capture start <binary_path> --no-screen
+> **Capturing**
+>
+> Session directory path: [session_directory_path]
+>
 
-# Trace only (no screen or voice)
-${ADA_BIN_DIR}/ada capture start <binary_path> --no-screen --no-voice
-```
+If the `ada capsture` command succeeds, you MUST proceed to section `Hand-off to Analyze`.
+Otherwise, show the error message and ask the user to fix it.
 
-### Step 4: Provide Feedback
+### Hand-off to Analyze
 
-Report to user:
+**Report to user:**
 
-- Session directory path
-- Capture status
-- How to stop: `${ADA_BIN_DIR}/ada capture stop`
-- How to analyze: Use `ada:analyze` skill
+> **Capture Completed**
+>
+> Session directory path: [session_directory_path]
+> Use `ada:analyze` skill to analyze the captured data
+>
+
+**Hand-off to Analyze**
+
+- You MUST use `ada:analyze` skill to analyze the captured data
+
+### Capture
 
 ## Error Handling
 
 - **Build failure**: Show build errors, suggest fixes
 - **Binary not found**: Guide user to specify path manually
-- **Permission denied**: Check code signing (macOS)
-- **ADA not installed**: Show installation instructions
-- **Agent library not found**: Ensure `ADA_AGENT_RPATH_SEARCH_PATHS` is set correctly
