@@ -116,7 +116,12 @@ fi
 
 if [[ ! -f "$TARGET_DIR/tracer_backend/lib/libfrida_agent.dylib" ]]; then
     echo "Error: libfrida_agent.dylib not found"
-    echo "Run with --build flag or manually build first:"
+    echo ""
+    echo "This may be because Frida SDK is not initialized. Try:"
+    echo "  1. ./utils/init_third_parties.sh"
+    echo "  2. cargo build --release"
+    echo ""
+    echo "Or if Frida is already initialized, just run:"
     if [[ "$BUILD_PROFILE" == "release" ]]; then
         echo "  cargo build --release"
     else

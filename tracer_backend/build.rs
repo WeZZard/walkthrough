@@ -32,6 +32,26 @@ fn main() {
     );
     println!("cargo:rustc-env=ADA_BUILD_PROFILE={}", profile);
 
+    // Check if Frida SDK libraries are available BEFORE running CMake
+    let third_parties = manifest_dir.parent().unwrap().join("third_parties");
+    let frida_core = third_parties.join("frida-core");
+    let frida_gum = third_parties.join("frida-gum");
+    let frida_core_lib = frida_core.join("libfrida-core.a");
+    let frida_gum_lib = frida_gum.join("libfrida-gum.a");
+
+    if !frida_core_lib.exists() || !frida_gum_lib.exists() {
+        println!("cargo:warning=");
+        println!("cargo:warning=Frida SDK not found!");
+        println!("cargo:warning=Run: ./utils/init_third_parties.sh");
+        println!("cargo:warning=");
+        panic!(
+            "Frida SDK not initialized. Run ./utils/init_third_parties.sh first.\n\
+             Expected libraries:\n  - {}\n  - {}",
+            frida_core_lib.display(),
+            frida_gum_lib.display()
+        );
+    }
+
     // Check if coverage is enabled via Cargo feature
     let coverage_enabled = env::var("CARGO_FEATURE_COVERAGE").is_ok();
 
@@ -134,16 +154,14 @@ fn main() {
     // Link C++ standard library (needed for ring_buffer.cpp and thread_registry.cpp)
     println!("cargo:rustc-link-lib=c++");
 
-    // Link Frida libraries - use absolute paths
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let third_parties = manifest_dir.parent().unwrap().join("third_parties");
+    // Link Frida libraries (SDK check already done at start of build.rs)
     println!(
-        "cargo:rustc-link-search=native={}/frida-core",
-        third_parties.display()
+        "cargo:rustc-link-search=native={}",
+        frida_core.display()
     );
     println!(
-        "cargo:rustc-link-search=native={}/frida-gum",
-        third_parties.display()
+        "cargo:rustc-link-search=native={}",
+        frida_gum.display()
     );
     println!("cargo:rustc-link-lib=static=frida-core");
     println!("cargo:rustc-link-lib=static=frida-gum");
