@@ -6,18 +6,16 @@
 
 ```sh
 claude plugin marketplace add WeZZard/skills
-claude plugin install wezzard/recall
+claude plugin install recall@wezzard-skills
 ```
 
-This adds **Recall** skills for capture (`run`), analysis (`analyze`), and system checks (`ada-doctor`)
+This installs the **Recall** skills for capture (`run`), analysis (`analyze`), and system checks (`ada-doctor`).
 
 ## Use Recall
 
 **Run**
 
-Run the app explicitly with `/recall:run`
-
-It will build and run your app.
+Run your app with `/recall:run`. It builds and runs your app.
 
 ```shell
 /recall:run Run the app
@@ -25,9 +23,9 @@ It will build and run your app.
 
 **Analyze**
 
-Just analyze after the app running done.
+Run analysis after your app finishes running.
 
-After the analysis done it will trigger Claude Code's plan mode to build the fix plan.
+When analysis completes, Claude Code enters Plan mode and generates a fix plan.
 
 ```shell
 /recall:analyze
@@ -58,17 +56,17 @@ After the analysis done it will trigger Claude Code's plan mode to build the fix
 
 It’s designed to give AI agents *evidence* (not guesses): a tight, time-aligned bundle they can summarize, search, and cite, including:
 
-- **Screen Recording**: Captures a high-fidelity video of the user's screen.
-- **Voice Waveform**: Records the user's voice activity.
-- **Function Active Records**: Provides detailed records of function active.
+- **Screen Recording**: Captures high-fidelity video of your screen.
+- **Voice Waveform**: Records voice activity as a waveform.
+- **Function Activity Records**: Detailed traces of function activity.
 
 ![Explaining Recall](README.md.d/tracks.png "Timeline showing synchronized screen recording, voice waveform, and function trace logs aligned by a red playhead timestamp.")
 
 ### Human-first Review Workflow
 
-**Recall** implements a workflow that always puts human review opinions first in defining the problems and reviewing solutions.
+**Recall** implements a workflow that keeps human judgment first—both when defining the problem and when reviewing solutions.
 
-It leverages the ask user question tool and plan tool comes with Claude Code to provide **proactive** and **native** review experience.
+It leverages Claude Code’s Ask User Question and Plan tools to provide a **proactive**, **native** review experience.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -123,7 +121,7 @@ It leverages the ask user question tool and plan tool comes with Claude Code to 
 
 ## Contributing Ideas
 
-Currently ideas are submitted as GitHub issues.
+For now, ideas are submitted as GitHub issues.
 
 If something feels missing or painful, open an issue with:
 
@@ -131,7 +129,7 @@ If something feels missing or painful, open an issue with:
 - Your platform/version details
 - (Optional) A redacted session bundle or screenshots/timestamps
 
-## Contributing Codes
+## Contributing Code
 
 Pull requests are welcome. Please:
 - Follow the build/setup guide: [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
@@ -140,16 +138,16 @@ Pull requests are welcome. Please:
 
 ## Contributing Tokens
 
-This project is maintained by AI agents that constantly review the contributed ideas and implement them selectively with AI agents.
+This project is maintained by AI agents that continuously review contributed ideas and selectively implement them.
 
-If you want to support the project’s LLM-related costs (docs, examples, and evaluations), please open an issue to coordinate or sponsor the project.
+If you want to support the project’s LLM-related costs (docs, examples, and evaluations), please open an issue to coordinate sponsorship or token contributions.
 
 **Do not post API keys in issues.**
 
 **Contributable Tokens:**
 
 - Anthropic Claude 4.5 series
-- OpenAI GPT 5.2
+- OpenAI GPT-5.2
 - Kimi K2.5
 
 ## License
