@@ -154,15 +154,15 @@ if [[ "$FORM" == "plugin" ]]; then
     # Generate plugin.json with marketplace-compatible fields
     cat > "$OUTPUT_DIR/.claude-plugin/plugin.json" << EOF
 {
-  "name": "walkthrough",
+  "name": "readycheck",
   "version": "$VERSION",
   "description": "Walk through the bug, let AI find the cause",
   "author": {
     "name": "WeZZard",
     "url": "https://github.com/WeZZard"
   },
-  "repository": "https://github.com/WeZZard/ADA",
-  "homepage": "https://github.com/WeZZard/ADA",
+  "repository": "https://github.com/WeZZard/ReadyCheck",
+  "homepage": "https://github.com/WeZZard/ReadyCheck",
   "license": "MIT",
   "keywords": [
     "debugging",

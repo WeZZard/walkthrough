@@ -1,24 +1,24 @@
-# Walkthrough
+# ReadyCheck
 
-**Walkthrough** makes debugging faster and clearer by capturing what happened and replaying it later.
+**ReadyCheck** makes debugging faster and clearer by capturing what happened and replaying it later.
 
-## Get Walkthrough
+## Get ReadyCheck
 
 ```sh
 claude plugin marketplace add WeZZard/skills
-claude plugin install walkthrough@wezzard-skills
+claude plugin install readycheck@wezzard-skills
 ```
 
-This installs the **Walkthrough** skills for capture and analysis (`walkthrough`), standalone analysis (`analyze`), and system checks (`doctor`).
+This installs the **ReadyCheck** skills for capture and analysis (`check`), standalone analysis (`analyze`), and system checks (`doctor`).
 
-## Use Walkthrough
+## Use ReadyCheck
 
 **Run and Analyze**
 
-Run your app with `/walkthrough`. It builds, runs, captures, and automatically analyzes your app.
+Run your app with `/check`. It builds, runs, captures, and automatically analyzes your app.
 
 ```shell
-/walkthrough Run the app
+/check Run the app
 ```
 
 **Analyze Only**
@@ -52,21 +52,21 @@ When analysis completes, Claude Code enters Plan mode and generates a fix plan.
 
 ### Agent-first Debugging Architecture
 
-**Walkthrough** records a layered, shareable timeline of what you saw, what you said, and what your program did.
+**ReadyCheck** records a layered, shareable timeline of what you saw, what you said, and what your program did.
 
-It’s designed to give AI agents *evidence* (not guesses): a tight, time-aligned bundle they can summarize, search, and cite, including:
+It's designed to give AI agents *evidence* (not guesses): a tight, time-aligned bundle they can summarize, search, and cite, including:
 
 - **Screen Recording**: Captures high-fidelity video of your screen.
 - **Voice Waveform**: Records voice activity as a waveform.
 - **Function Activity Records**: Detailed traces of function activity.
 
-![Explaining Walkthrough](README.md.d/tracks.png "Timeline showing synchronized screen recording, voice waveform, and function trace logs aligned by a red playhead timestamp.")
+![Explaining ReadyCheck](README.md.d/tracks.png "Timeline showing synchronized screen recording, voice waveform, and function trace logs aligned by a red playhead timestamp.")
 
 ### Human-first Review Workflow
 
-**Walkthrough** implements a workflow that keeps human judgment first—both when defining the problem and when reviewing solutions.
+**ReadyCheck** implements a workflow that keeps human judgment first—both when defining the problem and when reviewing solutions.
 
-It leverages Claude Code’s Ask User Question and Plan tools to provide a **proactive**, **native** review experience.
+It leverages Claude Code's Ask User Question and Plan tools to provide a **proactive**, **native** review experience.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -140,7 +140,7 @@ Pull requests are welcome. Please:
 
 This project is maintained by AI agents that continuously review contributed ideas and selectively implement them.
 
-If you want to support the project’s LLM-related costs (docs, examples, and evaluations), please open an issue to coordinate sponsorship or token contributions.
+If you want to support the project's LLM-related costs (docs, examples, and evaluations), please open an issue to coordinate sponsorship or token contributions.
 
 **Do not post API keys in issues.**
 
@@ -159,7 +159,7 @@ For issues or questions, please refer to the documentation or create an issue in
 
 ## Quality Metrics
 
-![Quality Gate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/WeZZard/walkthrough/main/.github/badges/integration-score.json)
-![Rust Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/WeZZard/walkthrough/main/.github/badges/rust-coverage.json)
-![C/C++ Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/WeZZard/walkthrough/main/.github/badges/cpp-coverage.json)
-![Build Status](https://github.com/WeZZard/walkthrough/workflows/Quality%20Gate%20CI/badge.svg)
+![Quality Gate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/WeZZard/ReadyCheck/main/.github/badges/integration-score.json)
+![Rust Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/WeZZard/ReadyCheck/main/.github/badges/rust-coverage.json)
+![C/C++ Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/WeZZard/ReadyCheck/main/.github/badges/cpp-coverage.json)
+![Build Status](https://github.com/WeZZard/ReadyCheck/workflows/Quality%20Gate%20CI/badge.svg)

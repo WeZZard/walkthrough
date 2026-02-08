@@ -282,7 +282,7 @@ Call **ExitPlanMode** to make the user review the plan.
 ```bash
 ${ADA_BIN_DIR}/ada query @latest time-info
 ```
-If this fails, guide user to use `/walkthrough` skill first to capture a session.
+If this fails, guide user to use `/check` skill first to capture a session.
 
 ### No OpenAI Whisper Installed
 

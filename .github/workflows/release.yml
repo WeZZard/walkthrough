@@ -238,9 +238,9 @@ jobs:
         run: |
           VERSION=${{ needs.analyze.outputs.new_version }}
           cd dist
-          zip -r ../walkthrough-plugin-${VERSION}-macos.zip .
+          zip -r ../readycheck-plugin-${VERSION}-macos.zip .
           # Also create a "latest" zip for easy access
-          cp ../walkthrough-plugin-${VERSION}-macos.zip ../walkthrough-plugin-latest-macos.zip
+          cp ../readycheck-plugin-${VERSION}-macos.zip ../readycheck-plugin-latest-macos.zip
           cd ..
           ls -la *.zip
 
@@ -252,7 +252,7 @@ jobs:
           NOTES='${{ needs.analyze.outputs.release_notes }}'
 
           cat > release-body.md << 'BODY_EOF'
-          ## Walkthrough Plugin v${{ needs.analyze.outputs.new_version }}
+          ## ReadyCheck Plugin v${{ needs.analyze.outputs.new_version }}
 
           ${{ needs.analyze.outputs.release_notes }}
 
@@ -261,11 +261,11 @@ jobs:
           **Via Claude Code marketplace:**
           ```bash
           /plugin marketplace update wezzard-skills
-          /plugin install walkthrough@wezzard-skills
+          /plugin install readycheck@wezzard-skills
           ```
 
           **Manual download:**
-          Download `walkthrough-plugin-${{ needs.analyze.outputs.new_version }}-macos.zip` and extract to your plugins directory.
+          Download `readycheck-plugin-${{ needs.analyze.outputs.new_version }}-macos.zip` and extract to your plugins directory.
 
           ### Requirements
           - macOS (Apple Silicon or Intel)
@@ -281,11 +281,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.analyze.outputs.new_version }}
-          name: Walkthrough Plugin v${{ needs.analyze.outputs.new_version }}
+          name: ReadyCheck Plugin v${{ needs.analyze.outputs.new_version }}
           body_path: release-body.md
           files: |
-            walkthrough-plugin-${{ needs.analyze.outputs.new_version }}-macos.zip
-            walkthrough-plugin-latest-macos.zip
+            readycheck-plugin-${{ needs.analyze.outputs.new_version }}-macos.zip
+            readycheck-plugin-latest-macos.zip
           draft: ${{ inputs.draft }}
           prerelease: false
         env:
@@ -312,8 +312,8 @@ jobs:
           | Draft | ${{ inputs.draft }} |
 
           ### Assets
-          - \`walkthrough-plugin-${{ needs.analyze.outputs.new_version }}-macos.zip\`
-          - \`walkthrough-plugin-latest-macos.zip\`
+          - \`readycheck-plugin-${{ needs.analyze.outputs.new_version }}-macos.zip\`
+          - \`readycheck-plugin-latest-macos.zip\`
 
           ### Next Steps
           $(if [ "${{ inputs.draft }}" = "true" ]; then echo "1. Review the draft release in GitHub\n2. Publish when ready"; else echo "Release is live!"; fi)

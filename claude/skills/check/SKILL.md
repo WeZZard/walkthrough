@@ -1,9 +1,9 @@
 ---
-name: walkthrough
+name: check
 description: "Build, run, capture, and analyze any app in one step."
 ---
 
-# Walkthrough: Build, Run, Capture, and Analyze
+# ReadyCheck: Build, Run, Capture, and Analyze
 
 ## Purpose
 

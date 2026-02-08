@@ -4,7 +4,7 @@
  * Exercises common defect patterns so tooling can highlight leaks and misuse.
  * The program intentionally leaks memory, dereferences freed pointers, and
  * leaves a linked list uncollected. A double free helper is included but kept
- * disabled to avoid crashing the walkthrough.
+ * disabled to avoid crashing the demo.
  */
 
 #include <stdio.h>
